@@ -8,6 +8,14 @@
 //  Les wildcards *.nintendo.* couvrent deja TOUS les hotes compte/jeu decouverts
 //  (accounts, m-lp1.baas, capi.lp1.op2, dragons, scsi, god.penne, e0d67c509...baas).
 // ============================================================
+//  nncs2 NOTE : Pia exige DEUX IP DISTINCTES pour nncs1/nncs2, sinon il dedup et n'envoie
+//  jamais la 2e sonde -> le NAT ne se termine pas -> MK8/S2 tombent en 2618-201. L'ancienne
+//  box distincte est morte (ne repond plus) ; le VPS OVH la remplace et fait tourner le meme
+//  responder nncs2 (UDP 10025 + 10125) avec NNCS_SERVER_IP regle sur sa propre IP. Doit
+//  rester aligne avec DnsMitmResolver.cs cote emulateur, qui redirige nncs2 vers la meme IP.
+//
+//  ATTENTION : tout ce qui est DANS le litteral ci-dessous est ecrit tel quel sur la carte SD
+//  de l'utilisateur, commentaires '#' compris. Les explications vont ici, pas la-dedans.
 #ifndef NEXTENDO_HOSTS_H
 #define NEXTENDO_HOSTS_H
 
@@ -24,7 +32,7 @@ static const char NEXTENDO_HOSTS[] =
     "51.178.29.194    *.nintendo.co.jp\n"
     "\n"
     "# --- 2) NAT-check #2 : IP differente de nncs1 (sinon MK8 test-103) ---\n"
-    "178.105.220.158  nncs2-*.n.n.srv.nintendo.net\n"
+    "164.132.111.120  nncs2-*.n.n.srv.nintendo.net\n"
     "\n"
     "# --- 3) ANTI-BAN : telemetrie / rapport d'erreur -> trou noir (en dernier) ---\n"
     "0.0.0.0          receive-%.dg.srv.nintendo.net\n"
