@@ -85,12 +85,11 @@
 //           La trace est GARDEE : le gel du build 10 n'a jamais ete explique (le suspect spl a ete
 //           innocente par la trace elle-meme), donc si un joueur le revit, prelude_trace.txt est
 //           notre seul temoin. Elle repart de zero a chaque lancement.
-// build 13 : ECRAN DE REVUE AVANT APPLICATION. L'ecran de confirmation montrait juste "Nextendo ou
-//           Nintendo" sans detail. Maintenant on affiche les fichiers qui vont changer (exosphere.ini,
-//           system_settings.ini, hosts sysmmc/emummc), la valeur actuelle vs cible, et pourquoi.
-//           nextendo_scan_config() lit les fichiers reels sur la SD et compare. Ajoute aussi un
-//           avertissement specifique pour les consoles sans emuMMC (blank_prodinfo sans effet).
-#define NEXTENDO_BUILD 13
+// build 13 : ECRAN DE REVUE AVANT APPLICATION (revertido en build 14). Mostraba los cambios
+//           de config antes de aplicar. Causaba confusión y se revirtió al confirm estático.
+// build 14 : REVERT del config review screen. Vuelve al ui_draw_confirm original.
+//           Agregado GitHub Actions workflow para builds automáticos.
+#define NEXTENDO_BUILD 14
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
