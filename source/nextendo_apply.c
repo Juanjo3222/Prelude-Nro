@@ -29,6 +29,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <unistd.h>   // rmdir (purge des fichiers laisses par un ancien build)
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <switch.h>
 
 #include "nextendo_apply.h"
@@ -429,6 +432,7 @@ bool nextendo_apply_nextendo(void) {
     // rien ici, et la telemetrie est de toute facon null-routee par nos propres lignes.
     bool i = iniSetDnsMitm(true, false);
     bool p = iniSetBlankProdinfoEmummc(false); // emuMMC : vrai PRODINFO -> cert device OK (fix 2123-0011)
+    if (!p) nextendo_trace("29 WARN: iniSetBlankProdinfoEmummc(false) a echoue -> risque 2123-0011");
     nextendo_purge_leaks();              // logs DNS-MITM + .bak : l'IP du VPS n'a rien a y faire
     fsdevCommitDevice("sdmc");           // flush SD avant tout reboot
     return a && b && i && p;
@@ -483,6 +487,55 @@ bool nextendo_apply_nintendo(void) {
     fsdevCommitDevice("sdmc");
     nextendo_trace("27 apply_nintendo: TERMINE");
     return i;
+}
+
+// --- Diagnostic reseau (trace les infos utiles pour 2123-0011 / 2810-1224) ---
+void nextendo_diag_network(void) {
+    char buf[128];
+    
+    // nncs2 UDP connect (ne bloque pas, ne verifie que la validite de l'adresse).
+    // Le test reel de connectivite Pia necessite d'echanger le protocole NEX, hors de
+    // portee ici. On logge au moins la cible configuree.
+    {
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0) {
+            struct sockaddr_in sa;
+            memset(&sa, 0, sizeof(sa));
+            sa.sin_family = AF_INET;
+            sa.sin_port = htons(10025);
+            sa.sin_addr.s_addr = inet_addr("164.132.111.120");
+            int rc = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
+            close(fd);
+            snprintf(buf, sizeof(buf), "36 diag: nncs2:10025 (UDP) -> %s", rc == 0 ? "socket ok" : "socket echec");
+        } else {
+            snprintf(buf, sizeof(buf), "36 diag: nncs2:10025 (UDP) -> SOCKET_ECHEC");
+        }
+        nextendo_trace(buf);
+    }
+    {
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0) {
+            struct sockaddr_in sa;
+            memset(&sa, 0, sizeof(sa));
+            sa.sin_family = AF_INET;
+            sa.sin_port = htons(10125);
+            sa.sin_addr.s_addr = inet_addr("164.132.111.120");
+            int rc = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
+            close(fd);
+            snprintf(buf, sizeof(buf), "37 diag: nncs2:10125 (UDP) -> %s", rc == 0 ? "socket ok" : "socket echec");
+        } else {
+            snprintf(buf, sizeof(buf), "37 diag: nncs2:10125 (UDP) -> SOCKET_ECHEC");
+        }
+        nextendo_trace(buf);
+    }
+
+    // Verifie que les fichiers hosts sont presents (confirme que le mode Nextendo
+    // a bien ses redirections ; si absent, le mode Nintendo est actif sans surprise).
+    struct stat st;
+    bool hasSys = stat(NEXTENDO_HOSTS_SYSMMC, &st) == 0;
+    bool hasEmu = stat(NEXTENDO_HOSTS_EMUMMC, &st) == 0;
+    snprintf(buf, sizeof(buf), "38 diag: hosts sysmmc=%d emummc=%d", hasSys, hasEmu);
+    nextendo_trace(buf);
 }
 
 Result nextendo_reboot(void) {

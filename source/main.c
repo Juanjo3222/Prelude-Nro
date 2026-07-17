@@ -82,6 +82,10 @@ int main(int argc, char **argv) {
     NextendoUpdate upd = nextendo_update_check();
     nextendo_trace(upd.available ? "14 update_check: MAJ DISPO -> homebrew verrouille (A inactif)"
                                  : "14 update_check: a jour -> A actif");
+    // Diagnostic reseau : nncs2 + etat hosts (trace pour 2123-0011 / 2810-1224).
+    socketInitializeDefault();
+    nextendo_diag_network();
+    socketExit();
     nextendo_trace("15 entree dans la boucle principale");
 
     bool tracedLoop = false, tracedConfirm = false;
