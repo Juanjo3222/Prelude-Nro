@@ -45,6 +45,10 @@ static const char NEXTENDO_HOSTS[] =
     "51.178.29.194    *.nintendo.com\n"
     "51.178.29.194    *.nintendowifi.net\n"
     "51.178.29.194    *.nintendo.co.jp\n"
+    "51.178.29.194 val.hac.penne.srv.nintendo.net\n"
+    "51.178.29.194 dauth-lp1.ndas.srv.nintendo.net\n"
+    "51.178.29.194 *.srv.nintendo.net\n"
+    "51.178.29.194 *srv.nintendo.net\n"
     "\n"
     "# --- 2) NAT-check #2 : IP differente de nncs1 (sinon MK8 test-103) ---\n"
     "164.132.111.120  nncs2-*.n.n.srv.nintendo.net\n"
@@ -52,13 +56,15 @@ static const char NEXTENDO_HOSTS[] =
     "# --- 3) ANTI-BAN : telemetrie -> trou noir ---\n"
     "0.0.0.0          receive-%.dg.srv.nintendo.net\n"
     "0.0.0.0          receive-%.er.srv.nintendo.net\n"
-    "# --- 4) d4c (MAJ systeme) -> VPS ---\n"
-    "# Le handler cote VPS repond avec des constantes hardcodees (baseline 16.0.0, latest\n"
-    "# 22.5.0) capturees de Nintendo. Pour les consoles en 22.5.0 -> \"a jour\". Pour les\n"
-    "# firmwares plus anciens -> \"MAJ dispo\".\n"
+    "# d4c (MAJ systeme) -> VPS (port 443, HTTPS). Le handler nx-account repond avec des\n"
+    "# constantes hardcodees (baseline 16.0.0, latest 22.5.0) capturees de Nintendo. Pour\n"
+    "# les consoles en 22.5.0 -> \"a jour\". Pour les firmwares plus anciens -> \"MAJ dispo\".\n"
     "# NE PAS null-router : nim stocke un flag persistant dans la savedata systeme si la\n"
     "# reference version est absente, et le popup ne disparait plus meme apres correction.\n"
-    "51.178.29.194    *.d4c.nintendo.net\n";
+    "# NE PAS desactiver la redirection : d4c parle deja HTTPS, certifie par le CA Nextendo\n"
+    "# installe sur la SD. Le TLS fonctionne.\n"
+    "51.178.29.194    *.d4c.nintendo.net\n"
+    "51.178.29.194    *d4c.nintendo.net\n";
 
 // Chemins cibles sur la carte SD.
 #define NEXTENDO_HOSTS_SYSMMC "sdmc:/atmosphere/hosts/sysmmc.txt"

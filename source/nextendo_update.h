@@ -89,7 +89,7 @@
 //           de config antes de aplicar. Causaba confusión y se revirtió al confirm estático.
 // build 14 : REVERT del config review screen. Vuelve al ui_draw_confirm original.
 //           Agregado GitHub Actions workflow para builds automáticos.
-#define NEXTENDO_BUILD 16
+#define NEXTENDO_BUILD 17
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
