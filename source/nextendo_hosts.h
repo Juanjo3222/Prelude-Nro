@@ -52,14 +52,13 @@ static const char NEXTENDO_HOSTS[] =
     "# --- 3) ANTI-BAN : telemetrie -> trou noir ---\n"
     "0.0.0.0          receive-%.dg.srv.nintendo.net\n"
     "0.0.0.0          receive-%.er.srv.nintendo.net\n"
-    "# --- 4) d4c (MAJ systeme) -> trou noir ---\n"
-    "# Le handler cote VPS n'etant pas encore operationnel, on bloque la verification de\n"
-    "# mise a jour pour eviter le supernag. La Switch traite l'echec de connexion comme\n"
-    "# \"pas de MAJ disponible\" et n'affiche pas de popup.\n"
-    "# NOTE: si la console a deja un flag persistant pose par un ancien routage vers le\n"
-    "# VPS sans handler, le supernag peut persister. Dans ce cas, un passage en mode\n"
-    "# Nintendo officiel puis retour sur Prelude resout le flag.\n"
-    "0.0.0.0          *.d4c.nintendo.net\n";
+    "# --- 4) d4c (MAJ systeme) -> VPS ---\n"
+    "# Le handler cote VPS repond avec des constantes hardcodees (baseline 16.0.0, latest\n"
+    "# 22.5.0) capturees de Nintendo. Pour les consoles en 22.5.0 -> \"a jour\". Pour les\n"
+    "# firmwares plus anciens -> \"MAJ dispo\".\n"
+    "# NE PAS null-router : nim stocke un flag persistant dans la savedata systeme si la\n"
+    "# reference version est absente, et le popup ne disparait plus meme apres correction.\n"
+    "51.178.29.194    *.d4c.nintendo.net\n";
 
 // Chemins cibles sur la carte SD.
 #define NEXTENDO_HOSTS_SYSMMC "sdmc:/atmosphere/hosts/sysmmc.txt"
