@@ -89,8 +89,8 @@
 //           de config antes de aplicar. Causaba confusión y se revirtió al confirm estático.
 // build 14 : REVERT del config review screen. Vuelve al ui_draw_confirm original.
 //           Agregado GitHub Actions workflow para builds automáticos.
-// v2.0.0 : Major bump. Hosts actualizados con redirecciones a VPS para penne_ids, dauth, srv.nintendo.net.
-// fix: NEXTENDO_BUILD 20 para evitar que el servidor (v12) bloquee el homebrew con falso "Mise à jour OBLIGATOIRE".
+// v2.0.1 : Major bump + fix build 20. Hosts actualizados con redirecciones a VPS para penne_ids, dauth, srv.nintendo.net.
+// Anterior v2.0.0 tenia NEXTENDO_BUILD 0, lo que provocaba falso "Mise à jour OBLIGATOIRE" (server v12 > build 0).
 #define NEXTENDO_BUILD 20
 
 typedef struct {
