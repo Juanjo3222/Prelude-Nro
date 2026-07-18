@@ -48,7 +48,6 @@ static const char NEXTENDO_HOSTS[] =
     "# Le vrai Nintendo repond \"pas de MAJ\" (22.5.0 est le plus recent) -> pas de popup.\n"
     "# Chaque service critique a son entree explicite ci-dessous.\n"
     "51.178.29.194    *.nintendo.com\n"
-    "51.178.29.194    *.nintendowifi.net\n"
     "51.178.29.194    *.nintendo.co.jp\n"
     "# Entrees explicites pour les hotes critiques du linking de compte\n"
     "# et des services online (par securite, pour les wildcards multi-niveaux).\n"
