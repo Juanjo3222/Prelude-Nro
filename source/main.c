@@ -213,7 +213,7 @@ int main(int argc, char **argv) {
                     break;
                 case NB_MOUNT_FAIL:
                     snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_MOUNT_FAIL));
-                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_MOUNT_FAIL_DESC));
+                    snprintf(rMsg, sizeof(rMsg), "%s (rc=0x%x)", lang_str(STR_STATUS_MOUNT_FAIL_DESC), g_last_rc);
                     break;
                 case NB_NET_CONNECT:
                     snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_NET_CONNECT));

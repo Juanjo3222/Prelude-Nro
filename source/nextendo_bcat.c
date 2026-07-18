@@ -44,6 +44,7 @@
 #define LOG_PATH    "sdmc:/nextendo_bcat.log"
 
 static FILE *g_log = NULL;
+static Result g_last_rc = 0;   // dernier rc FS, affiché à l'écran en cas d'erreur
 static void logf_(const char *fmt, ...) {
     if (!g_log) return;
     va_list ap;
@@ -188,6 +189,7 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
 
     FsFileSystem fs;
     Result rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
+    g_last_rc = rc;
     logf_("fsOpen_BcatSaveData: rc=0x%x", rc);
     if (R_FAILED(rc)) {
         logf_("tentative creation du save BCAT...");
@@ -198,21 +200,27 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
 
         FsSaveDataCreationInfo info;
         memset(&info, 0, sizeof(info));
-        info.save_data_size     = 0x400000;   // 4 Mo
-        info.journal_size       = 0x100000;   // 1 Mo
+        info.save_data_size     = 0x400000;
+        info.journal_size       = 0x100000;
+        info.available_size     = 0x4000;
         info.owner_id           = S2_TITLE_ID;
+        info.flags              = 0;
         info.save_data_space_id = FsSaveDataSpaceId_User;
 
+        // JKSV (save-manager de reference) utilise 0x40060 / Thumbnail. switchbrew.org confirme
+        // que le FS rejecte size=sizeof(meta) / type=None lors d'un appel externe.
         FsSaveDataMetaInfo meta;
         memset(&meta, 0, sizeof(meta));
-        meta.size = sizeof(meta);
-        meta.type = FsSaveDataMetaType_None;
+        meta.size = 0x40060;
+        meta.type = FsSaveDataMetaType_Thumbnail;
 
         rc = fsCreateSaveDataFileSystem(&attr, &info, &meta);
+        g_last_rc = rc;
         logf_("fsCreateSaveDataFileSystem: rc=0x%x", rc);
         if (R_SUCCEEDED(rc)) {
             logf_("save BCAT cree, nouvelle tentative d'ouverture...");
             rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
+            g_last_rc = rc;
             logf_("fsOpen_BcatSaveData (2): rc=0x%x", rc);
         }
         if (R_FAILED(rc)) {
@@ -222,13 +230,16 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
             return NB_MOUNT_FAIL;
         }
     }
-    if (fsdevMountDevice("bcat", fs) < 0) {
+    int mount_rc = fsdevMountDevice("bcat", fs);
+    if (mount_rc < 0) {
+        g_last_rc = (Result)mount_rc;
         fsFsClose(&fs);
         free(bundle);
-        logf_("fsdevMountDevice: echec");
+        logf_("fsdevMountDevice: rc=%d", mount_rc);
         if (g_log) fclose(g_log);
         return NB_MOUNT_FAIL;
     }
+    g_last_rc = 0;
 
     // Journalise ce qui EXISTE deja dans le save (avant modif) — diagnostic.
     logf_("--- contenu save AVANT ---");

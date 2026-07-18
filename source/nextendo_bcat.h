@@ -37,4 +37,7 @@ typedef enum {
 // Installe le planning S2 dans son cache BCAT. socketInitializeDefault() doit etre actif.
 nextendo_bcat_result nextendo_bcat_install_s2(void);
 
+// Dernier Result FS (affiche a l'ecran en cas d'erreur NB_MOUNT_FAIL).
+extern Result g_last_rc;
+
 #endif // NEXTENDO_BCAT_H
