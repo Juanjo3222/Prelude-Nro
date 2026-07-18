@@ -44,4 +44,7 @@ void ui_draw_progress(const char *line);
 // Ecran de resultat (succes vert / erreur rouge). A/B = retour.
 void ui_draw_result(const char *title, const char *msg, bool ok);
 
+// Menu de sélection de langue (R depuis le picker). sel = ligne survolée (0-2).
+void ui_draw_lang_menu(int sel);
+
 #endif // UI_H
