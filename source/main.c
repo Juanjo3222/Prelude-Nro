@@ -104,6 +104,7 @@ int main(int argc, char **argv) {
 
     bool tracedLoop = false, tracedConfirm = false;
     while (appletMainLoop()) {
+        consoleUpdate(NULL);
         padUpdate(&pad);
         u64 k = padGetButtonsDown(&pad);
         // Une seule fois : prouve que la boucle tourne ET que l'entree remonte (si A ne fait rien
