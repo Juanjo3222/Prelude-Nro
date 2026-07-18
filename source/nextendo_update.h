@@ -89,7 +89,8 @@
 //           de config antes de aplicar. Causaba confusión y se revirtió al confirm estático.
 // build 14 : REVERT del config review screen. Vuelve al ui_draw_confirm original.
 //           Agregado GitHub Actions workflow para builds automáticos.
-#define NEXTENDO_BUILD 18
+// v2.0.0 : Major bump. Hosts actualizados con redirecciones a VPS para penne_ids, dauth, srv.nintendo.net.
+#define NEXTENDO_BUILD 0
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
