@@ -31,15 +31,18 @@
 #include "nextendo_bcat.h"
 #include "nextendo_update.h"
 #include "ui_theme.h"
+#include "lang.h"
 
 enum {
     SCREEN_PICKER, SCREEN_S2_INFO, SCREEN_S2_PROGRESS, SCREEN_S2_RESULT,
-    SCREEN_UPD_PROGRESS, SCREEN_UPD_RESULT
+    SCREEN_UPD_PROGRESS, SCREEN_UPD_RESULT,
+    SCREEN_LANG
 };
 
 int main(int argc, char **argv) {
     romfsInit();
     audio_init();
+    lang_init();
 
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
@@ -73,6 +76,7 @@ int main(int argc, char **argv) {
     int  focus  = FOCUS_MODE;
     int  screen = SCREEN_PICKER;
     int  state  = 0;
+    int  langSel = g_lang;
     char status[160] = {0};
     char rTitle[64] = {0}, rMsg[192] = {0};
     bool rOk = false;
@@ -109,6 +113,7 @@ int main(int argc, char **argv) {
         if (screen == SCREEN_PICKER) {
             if (state == 0) {
                 if (k & (HidNpadButton_B | HidNpadButton_Plus)) break;
+                if (k & HidNpadButton_R) { screen = SCREEN_LANG; langSel = g_lang; }
                 if (upd.available) {
                     // MAJ OBLIGATOIRE : tant qu'une version plus recente existe, le homebrew
                     // est verrouille -> seules l'installation (Y) et la sortie (+/B) sont possibles.
@@ -136,18 +141,18 @@ int main(int argc, char **argv) {
                     nextendo_trace(ok ? "28 apply a renvoye OK -> reboot"
                                       : "28 apply a renvoye ECHEC -> message d erreur");
                     if (ok) {
-                        snprintf(status, sizeof(status),
-                                 sel == CHOICE_NEXTENDO
-                                     ? "Mode NEXTENDO applique  -  redemarrage..."
-                                     : "Mode NINTENDO applique  -  redemarrage...");
+                        snprintf(status, sizeof(status), "%s",
+                                 lang_str(sel == CHOICE_NEXTENDO
+                                     ? STR_STATUS_NEXTENDO_OK
+                                     : STR_STATUS_NINTENDO_OK));
                         ui_draw_picker(sel, current, focus, status, upd.available ? upd.latest : 0);
                         svcSleepThread(1200000000ULL);
                         audio_exit();
                         nextendo_reboot();
-                        snprintf(status, sizeof(status), "Echec du redemarrage");
+                        snprintf(status, sizeof(status), "%s", lang_str(STR_STATUS_REBOOT_FAIL));
                         state = 0;
                     } else {
-                        snprintf(status, sizeof(status), "ERREUR : ecriture sur la SD impossible");
+                        snprintf(status, sizeof(status), "%s", lang_str(STR_STATUS_SD_ERROR));
                         state = 0;
                     }
                 }
@@ -166,8 +171,24 @@ int main(int argc, char **argv) {
             }
             if (screen == SCREEN_S2_INFO) ui_draw_s2_info();
 
+        } else if (screen == SCREEN_LANG) {
+            if (k & HidNpadButton_B) {
+                screen = SCREEN_PICKER;
+            } else if (k & HidNpadButton_A) {
+                if (langSel != g_lang) {
+                    g_lang = langSel;
+                    lang_save();
+                }
+                screen = SCREEN_PICKER;
+            } else if (k & HidNpadButton_Up) {
+                if (langSel > 0) langSel--;
+            } else if (k & HidNpadButton_Down) {
+                if (langSel < 3) langSel++;
+            }
+            if (screen == SCREEN_LANG) ui_draw_lang_menu(langSel);
+
         } else if (screen == SCREEN_S2_PROGRESS) {
-            ui_draw_progress("Telechargement et installation du planning...");
+            ui_draw_progress(lang_str(STR_STATUS_DOWNLOAD_SCHEDULE));
             svcSleepThread(150000000ULL);
             socketInitializeDefault();
             nextendo_bcat_result res = nextendo_bcat_install_s2();
@@ -175,53 +196,50 @@ int main(int argc, char **argv) {
             rOk = (res == NB_OK);
             switch (res) {
                 case NB_OK:
-                    snprintf(rTitle, sizeof(rTitle), "Planning installe");
-                    snprintf(rMsg, sizeof(rMsg),
-                             "Ancien planning remplace. Relance Splatoon 2 pour l'appliquer.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_SCHEDULE_OK));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_SCHEDULE_OK_DESC));
                     break;
                 case NB_NO_SCHEDULE:
-                    snprintf(rTitle, sizeof(rTitle), "Aucun planning");
-                    snprintf(rMsg, sizeof(rMsg), "Rien de publie pour le moment.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_NO_SCHEDULE));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_NO_SCHEDULE_DESC));
                     break;
                 case NB_MOUNT_FAIL:
-                    snprintf(rTitle, sizeof(rTitle), "Sauvegarde introuvable");
-                    snprintf(rMsg, sizeof(rMsg), "Lance Splatoon 2 une fois, puis reessaie.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_MOUNT_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_MOUNT_FAIL_DESC));
                     break;
                 case NB_NET_FAIL:
-                    snprintf(rTitle, sizeof(rTitle), "Echec reseau");
-                    snprintf(rMsg, sizeof(rMsg),
-                             "Telechargement impossible (verifie la connexion / le mode).");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_NET_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_NET_FAIL_DESC));
                     break;
                 default:
-                    snprintf(rTitle, sizeof(rTitle), "Echec ecriture");
-                    snprintf(rMsg, sizeof(rMsg), "Ecriture dans la sauvegarde impossible.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_WRITE_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_WRITE_FAIL_DESC));
                     break;
             }
             screen = SCREEN_S2_RESULT;
 
         } else if (screen == SCREEN_UPD_PROGRESS) {
-            ui_draw_progress("Telechargement de la mise a jour...");
+            ui_draw_progress(lang_str(STR_STATUS_DOWNLOAD_UPDATE));
             svcSleepThread(150000000ULL);
             nextendo_update_result res = nextendo_update_apply(upd.size);
             rOk = (res == NUP_OK);
             switch (res) {
                 case NUP_OK:
                     upd.available = false;   // faite : on retire le bandeau
-                    snprintf(rTitle, sizeof(rTitle), "Mise a jour installee");
-                    snprintf(rMsg, sizeof(rMsg),
-                             "FERME et relance le homebrew Prelude pour appliquer la v%d.", upd.latest);
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_UPDATE_OK));
+                    snprintf(rMsg, sizeof(rMsg), lang_str(STR_STATUS_UPDATE_OK_DESC), upd.latest);
                     break;
                 case NUP_SIZE_FAIL:
-                    snprintf(rTitle, sizeof(rTitle), "Telechargement corrompu");
-                    snprintf(rMsg, sizeof(rMsg), "Taille inattendue. Reessaie.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_UPDATE_SIZE_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_UPDATE_SIZE_FAIL_DESC));
                     break;
                 case NUP_WRITE_FAIL:
-                    snprintf(rTitle, sizeof(rTitle), "Ecriture impossible");
-                    snprintf(rMsg, sizeof(rMsg), "Impossible d'ecrire sur la carte SD.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_UPDATE_WRITE_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_UPDATE_WRITE_FAIL_DESC));
                     break;
                 default:
-                    snprintf(rTitle, sizeof(rTitle), "Echec reseau");
-                    snprintf(rMsg, sizeof(rMsg), "Telechargement impossible.");
+                    snprintf(rTitle, sizeof(rTitle), "%s", lang_str(STR_STATUS_UPDATE_NET_FAIL));
+                    snprintf(rMsg, sizeof(rMsg), "%s", lang_str(STR_STATUS_UPDATE_NET_FAIL_DESC));
                     break;
             }
             screen = SCREEN_UPD_RESULT;
