@@ -153,9 +153,38 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
     int status = 0;
     unsigned char *bundle = net_http_get(BCAT_IP, BCAT_PORT, BCAT_PATH, &blen, &status);
     logf_("http: status=%d body=%zu o", status, blen);
-    if (!bundle) { if (g_log) fclose(g_log); return NB_NET_FAIL; }
-    if (status == 204) { free(bundle); logf_("204 : rien de publie"); if (g_log) fclose(g_log); return NB_NO_SCHEDULE; }
-    if (status != 200 || blen < 8) { free(bundle); if (g_log) fclose(g_log); return NB_NET_FAIL; }
+    if (!bundle) {
+        switch (status) {
+            case NET_ERR_CONNECT:
+                logf_("ECHEC: serveur %s:%d injoignable", BCAT_IP, BCAT_PORT);
+                if (g_log) fclose(g_log);
+                return NB_NET_CONNECT;
+            case NET_ERR_TIMEOUT:
+                logf_("ECHEC: timeout reponse %s:%d", BCAT_IP, BCAT_PORT);
+                if (g_log) fclose(g_log);
+                return NB_NET_TIMEOUT;
+            case NET_ERR_PROTO:
+                logf_("ECHEC: reponse HTTP invalide depuis %s:%d", BCAT_IP, BCAT_PORT);
+                if (g_log) fclose(g_log);
+                return NB_NET_HTTP_ERR;
+            default:
+                logf_("ECHEC: erreur reseau %d (serveur %s:%d)", status, BCAT_IP, BCAT_PORT);
+                if (g_log) fclose(g_log);
+                return NB_NET_FAIL;
+        }
+    }
+    if (status == 204) {
+        free(bundle);
+        logf_("204 : rien de publie");
+        if (g_log) fclose(g_log);
+        return NB_NO_SCHEDULE;
+    }
+    if (status != 200 || blen < 8) {
+        logf_("ECHEC: status HTTP %d attendu 200, body=%zu o", status, blen);
+        free(bundle);
+        if (g_log) fclose(g_log);
+        return NB_NET_HTTP_ERR;
+    }
 
     FsFileSystem fs;
     Result rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);

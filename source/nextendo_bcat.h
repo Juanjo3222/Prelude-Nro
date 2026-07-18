@@ -23,12 +23,15 @@
 #include <switch.h>
 
 typedef enum {
-    NB_OK = 0,        // installe
-    NB_NET_FAIL,      // telechargement impossible
-    NB_NO_SCHEDULE,   // 204 : rien de publie
-    NB_MOUNT_FAIL,    // save BCAT introuvable (lancer S2 une fois)
-    NB_BAD_BUNDLE,    // bundle illisible
-    NB_WRITE_FAIL     // ecriture / commit save echoues
+    NB_OK = 0,           // installe
+    NB_NET_FAIL,         // telechargement impossible (raison dans le log)
+    NB_NET_CONNECT,      // serveur injoignable (timeout / connexion refusee)
+    NB_NET_TIMEOUT,      // reponse interrompue
+    NB_NET_HTTP_ERR,     // le serveur a repondu un code HTTP different de 200/204
+    NB_NO_SCHEDULE,      // 204 : rien de publie
+    NB_MOUNT_FAIL,       // save BCAT introuvable (lancer S2 une fois)
+    NB_BAD_BUNDLE,       // bundle illisible
+    NB_WRITE_FAIL        // ecriture / commit save echoues
 } nextendo_bcat_result;
 
 // Installe le planning S2 dans son cache BCAT. socketInitializeDefault() doit etre actif.
