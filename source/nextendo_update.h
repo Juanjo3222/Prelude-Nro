@@ -91,7 +91,7 @@
 //           Agregado GitHub Actions workflow para builds automáticos.
 // v2.0.1 : Major bump + fix build 20. Hosts actualizados con redirecciones a VPS para penne_ids, dauth, srv.nintendo.net.
 // Anterior v2.0.0 tenia NEXTENDO_BUILD 0, lo que provocaba falso "Mise à jour OBLIGATOIRE" (server v12 > build 0).
-#define NEXTENDO_BUILD 20
+#define NEXTENDO_BUILD 21
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
