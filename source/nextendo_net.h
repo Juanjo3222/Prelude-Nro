@@ -22,8 +22,17 @@
 #include <stddef.h>
 #include <stdio.h>
 
+// Codes d'erreur reseau (retournes dans *out_status quand la fonction retourne NULL).
+#define NET_ERR_UNKNOWN  -1   // erreur non specifiee
+#define NET_ERR_CONNECT  -2   // connexion echouee (timeout / refuse / host injoignable)
+#define NET_ERR_SOCKET   -3   // echec creation socket
+#define NET_ERR_TIMEOUT  -4   // timeout reponse (select/recv)
+#define NET_ERR_PROTO    -5   // reponse HTTP invalide (pas de status-line ou headers malformes)
+#define NET_ERR_OOM      -6   // allocation memoire
+
 // GET http://ip:port/path -> renvoie le CORPS (malloc, a free par l'appelant) + longueur + code HTTP.
 // HTTP/1.1 "Connection: close" -> lecture jusqu'a EOF. Retourne NULL si echec reseau/connexion.
+// *out_status : >0 = code HTTP (200, 204...), <0 = code d'erreur NET_ERR_*.
 // Necessite socketInitializeDefault() appele au prealable.
 unsigned char *net_http_get(const char *ip, int port, const char *path, size_t *out_len, int *out_status);
 

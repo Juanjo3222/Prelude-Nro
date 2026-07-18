@@ -34,10 +34,10 @@
 
 unsigned char *net_http_get(const char *ip, int port, const char *path, size_t *out_len, int *out_status) {
     *out_len = 0;
-    *out_status = 0;
+    *out_status = NET_ERR_UNKNOWN;
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return NULL;
+    if (fd < 0) { *out_status = NET_ERR_SOCKET; return NULL; }
 
     // Timeouts recv/send : evite un blocage si le serveur cesse de repondre.
     struct timeval tv = { .tv_sec = 20, .tv_usec = 0 };
@@ -59,12 +59,17 @@ unsigned char *net_http_get(const char *ip, int port, const char *path, size_t *
         FD_ZERO(&wf);
         FD_SET(fd, &wf);
         struct timeval ct = { .tv_sec = 6, .tv_usec = 0 };
-        if (select(fd + 1, NULL, &wf, NULL, &ct) <= 0) { close(fd); return NULL; }
+        if (select(fd + 1, NULL, &wf, NULL, &ct) <= 0) {
+            *out_status = NET_ERR_TIMEOUT;
+            close(fd);
+            return NULL;
+        }
         int soerr = 0;
         socklen_t sl = sizeof(soerr);
         getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl);
-        if (soerr != 0) { close(fd); return NULL; }
+        if (soerr != 0) { *out_status = NET_ERR_CONNECT; close(fd); return NULL; }
     } else if (rc < 0) {
+        *out_status = NET_ERR_CONNECT;
         close(fd);
         return NULL;
     }
@@ -78,29 +83,30 @@ unsigned char *net_http_get(const char *ip, int port, const char *path, size_t *
     int sent = 0;
     while (sent < rl) {
         ssize_t n = send(fd, req + sent, rl - sent, 0);
-        if (n <= 0) { close(fd); return NULL; }
+        if (n <= 0) { *out_status = NET_ERR_CONNECT; close(fd); return NULL; }
         sent += (int)n;
     }
 
     // Lit toute la reponse jusqu'a EOF (le serveur ferme apres le corps).
     size_t cap = 1 << 16, len = 0;
     unsigned char *buf = (unsigned char *)malloc(cap);
-    if (!buf) { close(fd); return NULL; }
+    if (!buf) { *out_status = NET_ERR_OOM; close(fd); return NULL; }
     for (;;) {
         if (len + 8192 > cap) {
             cap *= 2;
             unsigned char *nb = (unsigned char *)realloc(buf, cap);
-            if (!nb) { free(buf); close(fd); return NULL; }
+            if (!nb) { free(buf); close(fd); *out_status = NET_ERR_OOM; return NULL; }
             buf = nb;
         }
         ssize_t n = recv(fd, buf + len, cap - len, 0);
-        if (n <= 0) break;
+        if (n < 0) { *out_status = NET_ERR_TIMEOUT; free(buf); close(fd); return NULL; }
+        if (n == 0) break;
         len += (size_t)n;
     }
     close(fd);
 
     // Code HTTP = 3 chiffres apres le 1er espace de la status-line.
-    int status = 0;
+    int status = NET_ERR_PROTO;
     for (size_t i = 0; i + 3 < len && i < 64; i++) {
         if (buf[i] == ' ') {
             status = (buf[i + 1] - '0') * 100 + (buf[i + 2] - '0') * 10 + (buf[i + 3] - '0');
