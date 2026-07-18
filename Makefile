@@ -13,7 +13,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 #---------------------------------------------------------------------------------
 TARGET   := nextendo
-BUILD    := build
+BUILD    := build2
 SOURCES  := source
 DATA     := data
 INCLUDES := include
