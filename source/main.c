@@ -85,6 +85,18 @@ int main(int argc, char **argv) {
     // Diagnostic reseau : nncs2 + etat hosts (trace pour 2123-0011 / 2810-1224).
     socketInitializeDefault();
     nextendo_diag_network();
+    // DNS warmup : Atmosphere's DNS-MITM is lazy-loaded (reads hosts on first DNS query).
+    // nnAccount linking fails if DNS-MITM hasn't loaded when it resolves accounts.nintendo.com.
+    // Clover's workaround (BrowseNX from DBI title override) confirms any DNS query forces init;
+    // we do it here so linking works without user workarounds.
+    if (current == CHOICE_NEXTENDO) {
+        struct hostent *he = gethostbyname("accounts.nintendo.com");
+        nextendo_trace(he ? "15a dns warmup: accounts.nintendo.com -> %s"
+                          : "15a dns warmup: accounts.nintendo.com FAIL",
+                       he && he->h_addr_list[0]
+                           ? inet_ntoa(*(struct in_addr *)he->h_addr_list[0])
+                           : "(null)");
+    }
     socketExit();
     nextendo_trace("15 entree dans la boucle principale");
 
