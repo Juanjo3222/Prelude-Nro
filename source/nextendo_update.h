@@ -105,7 +105,10 @@
 //            Uses Switch native SSL service for HTTPS. Adds net_https_get/_to_file.
 // build 30 : v2.1.1. Startup update check via HTTP (no SSL) to fix 'Función no disponible'
 //            on login after exiting Prelude (sslInit/sslExit side effect on system SSL service).
-#define NEXTENDO_BUILD 30
+// build 31 : v2.1.2. Fix browser "Función no disponible". Remove api.hac.lp1.ctest.srv.nintendo.net
+//            and wildcards *.srv.nintendo.net / *srv.nintendo.net from DNS-MITM hosts so the
+//            browser conntest (introduced FW 18.0+) resolves to real Nintendo instead of VPS.
+#define NEXTENDO_BUILD 31
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
