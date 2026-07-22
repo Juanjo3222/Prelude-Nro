@@ -47,7 +47,7 @@ static int tcp_connect(const char *ip, int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
 
-    struct timeval tv = { .tv_sec = 20, .tv_usec = 0 };
+    struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
@@ -64,7 +64,7 @@ static int tcp_connect(const char *ip, int port) {
         fd_set wf;
         FD_ZERO(&wf);
         FD_SET(fd, &wf);
-        struct timeval ct = { .tv_sec = 6, .tv_usec = 0 };
+        struct timeval ct = { .tv_sec = 5, .tv_usec = 0 };
         if (select(fd + 1, NULL, &wf, NULL, &ct) <= 0) { close(fd); return -1; }
         int soerr = 0;
         socklen_t sl = sizeof(soerr);
