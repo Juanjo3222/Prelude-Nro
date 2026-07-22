@@ -14,11 +14,11 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // ============================================================
-//  Nextendo .nro -- auto-update via GitHub Releases (HTTPS).
-//  Uses the Switch's native SSL service (no httpc dependency).
-//  At startup, fetches the latest release info from GitHub API.
-//  If a newer version exists, shows a banner. User can press Y
-//  to download and replace /switch/nextendo.nro.
+//  Nextendo .nro -- auto-update check via HTTP (lightweight, no SSL),
+//  actual download via HTTPS (GitHub Releases).
+//  The startup check uses plain HTTP to avoid sslInitialize/sslExit
+//  side effects on the system SSL service — which can cause
+//  "Función no disponible" on login after exiting Prelude.
 // ============================================================
 #include <switch.h>
 #include <string.h>
@@ -29,35 +29,21 @@
 #include "nextendo_update.h"
 #include "nextendo_net.h"
 
-#define GH_API_HOST  "api.github.com"
-#define GH_API_PATH  "/repos/Juanjo3222/Prelude-Nro/releases/latest"
+// Lightweight HTTP endpoint for startup version check (no SSL needed).
+// Run your own or use any plain-HTTP endpoint that returns {"version":N,"size":M}.
+#define VPS_IP       "51.178.29.194"
+#define VPS_PORT     8095
+#define VPS_LATEST   "/api/nro/latest"
+
+// GitHub download: URL constructed from build number.
+#define GH_RELEASE   "https://github.com/Juanjo3222/Prelude-Nro/releases/download/v2.0.%d/nextendo.nro"
+
 #define NRO_PATH     "sdmc:/switch/nextendo.nro"
 #define NRO_TMP      "sdmc:/switch/nextendo.nro.new"
 
 // Stored by nextendo_update_check, consumed by nextendo_update_apply.
 // Static because the apply function signature doesn't include the URL.
 static char g_download_url[512] = {0};
-
-// Parse a JSON string value: ,"key":"value"
-static bool json_str(const unsigned char *b, size_t len, const char *key,
-                     char *out, size_t out_max) {
-    size_t kl = strlen(key);
-    for (size_t i = 0; i + kl < len; i++) {
-        if (memcmp(b + i, key, kl) == 0) {
-            size_t j = i + kl;
-            while (j < len && (b[j] == ' ' || b[j] == ':' || b[j] == '"')) j++;
-            size_t start = j;
-            while (j < len && b[j] != '"') j++;
-            size_t slen = j - start;
-            if (slen > 0 && slen < out_max) {
-                memcpy(out, b + start, slen);
-                out[slen] = '\0';
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 // Parse a JSON long value: ,"key":NNN
 static long json_long(const unsigned char *b, size_t len, const char *key) {
@@ -77,73 +63,30 @@ static long json_long(const unsigned char *b, size_t len, const char *key) {
     return -1;
 }
 
-// Check for update. Returns parsed release info.
-// Requires sslInitialize() called before, sslExit() will be called after.
+// Check for update. Plain HTTP (no SSL) to a lightweight endpoint.
+// If the endpoint is unreachable, no update is reported — graceful
+// degradation. The VPS URL can be changed at build time.
+// The actual download (nextendo_update_apply) uses HTTPS + sslInit.
 NextendoUpdate nextendo_update_check(void) {
     NextendoUpdate u = { false, 0, 0 };
-    // Get nifm ready for HTTPS
     socketInitializeDefault();
-
-    Result rc = sslInitialize(4);
-    if (R_FAILED(rc)) { socketExit(); return u; }
 
     size_t len = 0;
     int status = 0;
-    unsigned char *body = net_https_get(GH_API_HOST, GH_API_PATH, &len, &status);
+    unsigned char *body = net_http_get(VPS_IP, VPS_PORT, VPS_LATEST, &len, &status);
 
     if (body && status == 200) {
-        char tag[32] = {0};
-        if (json_str(body, len, "\"tag_name\"", tag, sizeof(tag))) {
-            // Extract version number from tag like "v2.0.9" -> 209
-            // Latest version has format vX.Y.Z where Z = NEXTENDO_BUILD
-            long tagMajor = 0, tagMinor = 0, tagPatch = 0;
-            // Parse "vMAJOR.MINOR.PATCH" format
-            if (tag[0] == 'v') {
-                int parsed = sscanf(tag + 1, "%ld.%ld.%ld",
-                                    &tagMajor, &tagMinor, &tagPatch);
-                if (parsed == 3 && tagPatch > NEXTENDO_BUILD) {
-                    u.available = true;
-                    u.latest = (int)tagPatch;
-                    // Find the nextendo.nro asset
-                    char name[64] = {0};
-                    char url[512] = {0};
-                    // Scan for assets array: find "browser_download_url" after
-                    // "name":"nextendo.nro"
-                    bool found = false;
-                    for (size_t i = 0; i + 16 < len; i++) {
-                        if (memcmp(body + i, "\"name\"", 6) == 0) {
-                            if (json_str(body + i, len - i, "\"name\"",
-                                         name, sizeof(name))) {
-                                if (strcmp(name, "nextendo.nro") == 0) {
-                                    // Found our asset -- get its download URL
-                                    const char *rest = (const char *)body + i + strlen(name) + 4;
-                                    size_t restLen = len - (i + strlen(name) + 4);
-                                    if (json_str((const unsigned char *)rest,
-                                                 restLen,
-                                                 "\"browser_download_url\"",
-                                                 url, sizeof(url))) {
-                                        u.size = json_long(
-                                            (const unsigned char *)rest,
-                                            restLen, "\"size\"");
-                                        strncpy(g_download_url, url,
-                                                sizeof(g_download_url) - 1);
-                                        g_download_url[
-                                            sizeof(g_download_url) - 1] = '\0';
-                                        found = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (!found) u.available = false;
-                }
-            }
+        long ver = json_long(body, len, "\"version\"");
+        long sz  = json_long(body, len, "\"size\"");
+        if (ver > NEXTENDO_BUILD && sz > 0) {
+            u.available = true;
+            u.latest = (int)ver;
+            u.size = sz;
+                    snprintf(g_download_url, sizeof(g_download_url), GH_RELEASE, (int)ver);
         }
         free(body);
     }
 
-    sslExit();
     socketExit();
     return u;
 }
