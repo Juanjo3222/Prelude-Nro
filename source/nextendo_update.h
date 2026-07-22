@@ -103,7 +103,12 @@
 // build 28 : v2.0.9. Fix input freeze (consoleUpdate(NULL) in main loop).
 // build 29 : v2.1.0. Auto-update via GitHub API (HTTPS) directly, no VPS dependency.
 //            Uses Switch native SSL service for HTTPS. Adds net_https_get/_to_file.
-#define NEXTENDO_BUILD 29
+// build 30 : v2.1.1. Startup update check via HTTP (no SSL) to fix 'Función no disponible'
+//            on login after exiting Prelude (sslInit/sslExit side effect on system SSL service).
+// build 31 : v2.1.2. Fix browser "Función no disponible". Remove api.hac.lp1.ctest.srv.nintendo.net
+//            and wildcards *.srv.nintendo.net / *srv.nintendo.net from DNS-MITM hosts so the
+//            browser conntest (introduced FW 18.0+) resolves to real Nintendo instead of VPS.
+#define NEXTENDO_BUILD 31
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo

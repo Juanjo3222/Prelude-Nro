@@ -36,10 +36,11 @@
 
 #include "nextendo_bcat.h"
 #include "nextendo_net.h"
+#include "nextendo_config.h"
 
 #define S2_TITLE_ID 0x0100F8F0000A2000ULL
-#define BCAT_IP     "51.178.29.194"
-#define BCAT_PORT   8095
+#define BCAT_HOST   NEXTENDO_SERVER_HOST
+#define BCAT_PORT   443
 #define BCAT_PATH   "/api/bcat/0100f8f0000a2000/cache"
 #define LOG_PATH    "sdmc:/nextendo_bcat.log"
 
@@ -153,44 +154,79 @@ static bool writeBundle(const unsigned char *b, size_t len) {
 
 nextendo_bcat_result nextendo_bcat_install_s2(void) {
     g_log = fopen(LOG_PATH, "w");
-    logf_("=== Nextendo BCAT install S2 (v2) ===");
+    logf_("=== Nextendo BCAT install S2 (v3 — stream-to-file) ===");
 
-    size_t blen = 0;
+    // Download the BCAT bundle to a temp file on SD card instead of buffering
+    // in RAM. The Switch has limited heap (especially in applet mode) and the
+    // doubling realloc in net_https_get can cause fragmentation at 4 MB.
+    const char *tmpPath = "sdmc:/nextendo_bcat.bundle";
+    FILE *tmpFile = fopen(tmpPath, "wb");
+    if (!tmpFile) {
+        logf_("ECHEC: impossible de creer le fichier temp %s", tmpPath);
+        if (g_log) fclose(g_log);
+        return NB_NET_FAIL;
+    }
+
     int status = 0;
-    unsigned char *bundle = net_http_get(BCAT_IP, BCAT_PORT, BCAT_PATH, &blen, &status);
-    logf_("http: status=%d body=%zu o", status, blen);
-    if (!bundle) {
+    long bodyBytes = net_https_get_to_file(BCAT_HOST, BCAT_PATH, tmpFile, &status);
+    fclose(tmpFile);
+
+    logf_("https: status=%d body=%ld o", status, bodyBytes);
+    if (bodyBytes < 0) {
+        remove(tmpPath);
         switch (status) {
             case NET_ERR_CONNECT:
-                logf_("ECHEC: serveur %s:%d injoignable", BCAT_IP, BCAT_PORT);
+                logf_("ECHEC: serveur %s:%d injoignable", BCAT_HOST, BCAT_PORT);
                 if (g_log) fclose(g_log);
                 return NB_NET_CONNECT;
             case NET_ERR_TIMEOUT:
-                logf_("ECHEC: timeout reponse %s:%d", BCAT_IP, BCAT_PORT);
+                logf_("ECHEC: timeout reponse %s:%d", BCAT_HOST, BCAT_PORT);
                 if (g_log) fclose(g_log);
                 return NB_NET_TIMEOUT;
             case NET_ERR_PROTO:
-                logf_("ECHEC: reponse HTTP invalide depuis %s:%d", BCAT_IP, BCAT_PORT);
+                logf_("ECHEC: reponse HTTPS invalide depuis %s:%d", BCAT_HOST, BCAT_PORT);
                 if (g_log) fclose(g_log);
                 return NB_NET_HTTP_ERR;
             default:
-                logf_("ECHEC: erreur reseau %d (serveur %s:%d)", status, BCAT_IP, BCAT_PORT);
+                logf_("ECHEC: erreur reseau %d (serveur %s:%d)", status, BCAT_HOST, BCAT_PORT);
                 if (g_log) fclose(g_log);
                 return NB_NET_FAIL;
         }
     }
     if (status == 204) {
-        free(bundle);
+        remove(tmpPath);
         logf_("204 : rien de publie");
         if (g_log) fclose(g_log);
         return NB_NO_SCHEDULE;
     }
-    if (status != 200 || blen < 8) {
-        logf_("ECHEC: status HTTP %d attendu 200, body=%zu o", status, blen);
-        free(bundle);
+    if (status != 200 || bodyBytes < 8) {
+        logf_("ECHEC: status HTTP %d attendu 200, body=%ld o", status, bodyBytes);
+        remove(tmpPath);
         if (g_log) fclose(g_log);
         return NB_NET_HTTP_ERR;
     }
+
+    // Read the temp file back into a single exact-size allocation.
+    size_t blen = (size_t)bodyBytes;
+    unsigned char *bundle = (unsigned char *)malloc(blen);
+    if (!bundle) {
+        logf_("ECHEC: malloc(%zu) impossible", blen);
+        remove(tmpPath);
+        if (g_log) fclose(g_log);
+        return NB_NET_FAIL;
+    }
+    tmpFile = fopen(tmpPath, "rb");
+    if (!tmpFile || fread(bundle, 1, blen, tmpFile) != blen) {
+        logf_("ECHEC: lecture du fichier temp");
+        if (tmpFile) fclose(tmpFile);
+        free(bundle);
+        remove(tmpPath);
+        if (g_log) fclose(g_log);
+        return NB_NET_FAIL;
+    }
+    fclose(tmpFile);
+    remove(tmpPath);
+    logf_("bundle: %zu o lus du fichier temp", blen);
 
     FsFileSystem fs;
     Result rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
