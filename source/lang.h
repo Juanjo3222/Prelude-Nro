@@ -22,6 +22,7 @@ typedef enum {
     LANG_ES,    // Español
     LANG_PT,    // Português
     LANG_FR,    // Français
+    LANG_JP,    // 日本語 
 } Lang;
 
 typedef enum {
