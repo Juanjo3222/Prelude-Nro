@@ -111,7 +111,8 @@
 // build 32 : v2.1.3. Fix Splatoon 2 schedule installer. Replace BCAT SaveData mount with
 //            Atmosphere LayeredFS (sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/)
 //            for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
-#define NEXTENDO_BUILD 32
+// build 33 : v2.1.4. Set real Nextendo server IP (51.178.29.194) in config replacing placeholder.
+#define NEXTENDO_BUILD 33
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
