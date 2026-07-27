@@ -14,16 +14,16 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // ============================================================
-//  Nextendo .nro — installation du planning BCAT de Splatoon 2.
+//  Nextendo .nro — Splatoon 2 schedule installer via LayeredFS.
 //
-//  Le serveur (nextendo-account, bcat_cache.go) construit tout le save delivery-cache
-//  (directories.meta + files.meta + payloads bruts + digests reverse-MD5) et le serialise
-//  en un bundle "NXBC". Ici on ne fait que : monter le save BCAT de S2, remplacer NOTRE
-//  partie (directories.meta + directories/) en PRESERVANT les fichiers propres a S2
-//  (passphrase.bin / list.msgpack / etag.bin / na_required), ecrire, committer.
+//  Extracts schedule payloads (coopdata, vsdata, fesdata) from the server's
+//  NXBC bundle and writes them into Atmosphere's LayeredFS override path:
+//    sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/
+//  Works for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
 //
-//  Permissions : un .nro lance via HBL herite des droits FS d'Atmosphere (comme JKSV).
-//  Un log est ecrit sur sdmc:/nextendo_bcat.log pour diagnostic.
+//  BCAT SaveData was replaced by LayeredFS because Splatoon 2 reads its
+//  schedules from ROMFS, not the BCAT delivery cache. Atmosphere's fs.mitm
+//  intercepts the ROMFS reads at the fsp-srv level and serves our files instead.
 // ============================================================
 #include <switch.h>
 #include <string.h>
@@ -38,14 +38,16 @@
 #include "nextendo_net.h"
 #include "nextendo_config.h"
 
-#define S2_TITLE_ID 0x0100F8F0000A2000ULL
-#define BCAT_HOST   NEXTENDO_SERVER_HOST
-#define BCAT_PORT   443
-#define BCAT_PATH   "/api/bcat/0100f8f0000a2000/cache"
-#define LOG_PATH    "sdmc:/nextendo_bcat.log"
+#define S2_TITLE_ID_USA "01003BC0000A0000"
+#define S2_TITLE_ID_EUR "0100F8F0000A2000"
+#define LAYEREDFS_BASE  "sdmc:/atmosphere/contents/%s/romfs/DebugUnderPilot/bcat"
+#define BCAT_HOST       NEXTENDO_SERVER_HOST
+#define BCAT_PORT       443
+#define BCAT_PATH       "/api/bcat/0100f8f0000a2000/cache"
+#define LOG_PATH        "sdmc:/nextendo_bcat.log"
 
 static FILE *g_log = NULL;
-Result g_last_rc = 0;   // dernier rc FS, affiché à l'écran en cas d'erreur
+Result g_last_rc = 0;
 static void logf_(const char *fmt, ...) {
     if (!g_log) return;
     va_list ap;
@@ -56,7 +58,6 @@ static void logf_(const char *fmt, ...) {
     fflush(g_log);
 }
 
-// mkdir -p sur le DOSSIER PARENT d'un chemin de fichier (fonctionne avec le prefixe "bcat:").
 static void ensureParent(const char *filePath) {
     char dir[FS_MAX_PATH];
     size_t len = strnlen(filePath, sizeof(dir) - 1);
@@ -74,7 +75,6 @@ static void ensureParent(const char *filePath) {
     mkdir(dir, 0777);
 }
 
-// Supprime recursivement le CONTENU d'un dossier monte (le dossier lui-meme reste).
 static void wipeTree(const char *path) {
     DIR *d = opendir(path);
     if (!d) return;
@@ -94,12 +94,12 @@ static void wipeTree(const char *path) {
     closedir(d);
 }
 
-// Efface UNIQUEMENT ce qu'on gere : directories.meta + l'arbre directories/.
-// On NE TOUCHE PAS a passphrase.bin / list.msgpack / etag.bin / na_required (crees par S2).
-static void clearManaged(void) {
-    remove("bcat:/directories.meta");
-    wipeTree("bcat:/directories");
-    rmdir("bcat:/directories");
+static void clearLayeredFS(const char *base) {
+    char p[FS_MAX_PATH];
+    snprintf(p, sizeof(p), "%s/coopdata", base); wipeTree(p); rmdir(p);
+    snprintf(p, sizeof(p), "%s/vsdata",    base); wipeTree(p); rmdir(p);
+    snprintf(p, sizeof(p), "%s/fesdata",   base); wipeTree(p); rmdir(p);
+    snprintf(p, sizeof(p), "%s/dummy",     base); wipeTree(p); rmdir(p);
 }
 
 static bool writeFileB(const char *path, const unsigned char *data, u32 len) {
@@ -112,15 +112,30 @@ static bool writeFileB(const char *path, const unsigned char *data, u32 len) {
     return ok;
 }
 
-// Parse le bundle NXBC et ecrit chaque blob dans bcat:/<path>.
-//   "NXBC" | u32 count | count * [ u16 pathLen | path | u32 dataLen | data ]   (tout little-endian)
-static bool writeBundle(const unsigned char *b, size_t len) {
+// Extracts a clean ROMFS path from a BCAT bundle path.
+// Bundle paths come as:
+//   directories.meta                          -> skip (metadata)
+//   directories/<digest>/coopdata/Setting.byml -> "coopdata/Setting.byml"
+//   coopdata/Setting.byml                     -> "coopdata/Setting.byml" (pass-through)
+static const char *dataRelPath(const char *rel) {
+    if (strcmp(rel, "directories.meta") == 0) return NULL;
+    if (strcmp(rel, "files.meta") == 0) return NULL;
+    if (strncmp(rel, "directories/", 12) == 0) {
+        const char *slash = strchr(rel + 12, '/');
+        if (slash && slash[1] != '\0') return slash + 1;
+        return NULL;
+    }
+    if (strchr(rel, '/') != NULL) return rel;
+    return NULL;
+}
+
+static bool writeBundleTo(const unsigned char *b, size_t len, const char *basePath) {
     if (len < 8 || memcmp(b, "NXBC", 4) != 0) { logf_("bundle: magic invalide"); return false; }
     u32 count;
     memcpy(&count, b + 4, 4);
     logf_("bundle: %u blobs", count);
     size_t off = 8;
-    u32 totalBytes = 0;
+    u32 written = 0;
     for (u32 i = 0; i < count; i++) {
         if (off + 2 > len) return false;
         u16 pl;
@@ -141,20 +156,27 @@ static bool writeBundle(const unsigned char *b, size_t len) {
             logf_("  REJETE chemin invalide: \"%s\"", rel);
             return false;
         }
+
+        const char *dataRel = dataRelPath(rel);
+        if (!dataRel) {
+            logf_("  ignore %s (meta/unknown)", rel);
+            continue;
+        }
+
         char path[FS_MAX_PATH];
-        snprintf(path, sizeof(path), "bcat:/%s", rel);
+        snprintf(path, sizeof(path), "%s/%s", basePath, dataRel);
         if (!writeFileB(path, b + off, dl)) return false;
-        logf_("  ok %s (%u o)", rel, dl);
-        totalBytes += dl;
+        logf_("  ok %s (%u o)", dataRel, dl);
+        written++;
         off += dl;
     }
-    logf_("bundle: %u o ecrits au total", totalBytes);
-    return true;
+    logf_("bundle: %u fichiers ecrits sur %u blobs", written, count);
+    return written > 0;
 }
 
 nextendo_bcat_result nextendo_bcat_install_s2(void) {
     g_log = fopen(LOG_PATH, "w");
-    logf_("=== Nextendo BCAT install S2 (v3 — stream-to-file) ===");
+    logf_("=== Nextendo BCAT install S2 (v4 — LayeredFS) ===");
 
     // Download the BCAT bundle to a temp file on SD card instead of buffering
     // in RAM. The Switch has limited heap (especially in applet mode) and the
@@ -168,7 +190,9 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
     }
 
     int status = 0;
+    sslInitialize(1);
     long bodyBytes = net_https_get_to_file(BCAT_HOST, BCAT_PATH, tmpFile, &status);
+    sslExit();
     fclose(tmpFile);
 
     logf_("https: status=%d body=%ld o", status, bodyBytes);
@@ -228,78 +252,32 @@ nextendo_bcat_result nextendo_bcat_install_s2(void) {
     remove(tmpPath);
     logf_("bundle: %zu o lus du fichier temp", blen);
 
-    FsFileSystem fs;
-    Result rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
-    g_last_rc = rc;
-    logf_("fsOpen_BcatSaveData: rc=0x%x", rc);
-    if (R_FAILED(rc)) {
-        logf_("tentative creation du save BCAT...");
-        FsSaveDataAttribute attr;
-        memset(&attr, 0, sizeof(attr));
-        attr.application_id   = S2_TITLE_ID;
-        attr.save_data_type   = FsSaveDataType_Bcat;
+    const char *regionIds[] = { S2_TITLE_ID_USA, S2_TITLE_ID_EUR };
+    bool anyOk = false;
+    bool anyErr = false;
 
-        FsSaveDataCreationInfo info;
-        memset(&info, 0, sizeof(info));
-        info.save_data_size     = 0x400000;
-        info.journal_size       = 0x100000;
-        info.available_size     = 0x4000;
-        info.owner_id           = S2_TITLE_ID;
-        info.flags              = 0;
-        info.save_data_space_id = FsSaveDataSpaceId_User;
+    for (int r = 0; r < 2; r++) {
+        char base[FS_MAX_PATH];
+        snprintf(base, sizeof(base), LAYEREDFS_BASE, regionIds[r]);
 
-        // JKSV (save-manager de reference) utilise 0x40060 / Thumbnail. switchbrew.org confirme
-        // que le FS rejecte size=sizeof(meta) / type=None lors d'un appel externe.
-        FsSaveDataMetaInfo meta;
-        memset(&meta, 0, sizeof(meta));
-        meta.size = 0x40060;
-        meta.type = FsSaveDataMetaType_Thumbnail;
+        logf_("--- region %s ---", regionIds[r]);
+        clearLayeredFS(base);
 
-        rc = fsCreateSaveDataFileSystem(&attr, &info, &meta);
-        g_last_rc = rc;
-        logf_("fsCreateSaveDataFileSystem: rc=0x%x", rc);
-        if (R_SUCCEEDED(rc)) {
-            logf_("save BCAT cree, nouvelle tentative d'ouverture...");
-            rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
-            g_last_rc = rc;
-            logf_("fsOpen_BcatSaveData (2): rc=0x%x", rc);
-        }
-        if (R_FAILED(rc)) {
-            logf_("ECHEC: impossible d'ouvrir/creer le save BCAT");
-            free(bundle);
-            if (g_log) fclose(g_log);
-            return NB_MOUNT_FAIL;
+        if (writeBundleTo(bundle, blen, base)) {
+            logf_("region %s: OK", regionIds[r]);
+            anyOk = true;
+        } else {
+            logf_("region %s: ECHEC", regionIds[r]);
+            anyErr = true;
         }
     }
-    int mount_rc = fsdevMountDevice("bcat", fs);
-    if (mount_rc < 0) {
-        g_last_rc = (Result)mount_rc;
-        fsFsClose(&fs);
-        free(bundle);
-        logf_("fsdevMountDevice: rc=%d", mount_rc);
-        if (g_log) fclose(g_log);
-        return NB_MOUNT_FAIL;
-    }
-    g_last_rc = 0;
 
-    // Journalise ce qui EXISTE deja dans le save (avant modif) — diagnostic.
-    logf_("--- contenu save AVANT ---");
-    DIR *d = opendir("bcat:/");
-    if (d) { struct dirent *e; while ((e = readdir(d))) if (strcmp(e->d_name,".")&&strcmp(e->d_name,"..")) logf_("  %s", e->d_name); closedir(d); }
-
-    clearManaged();      // efface seulement directories.meta + directories/ (garde passphrase.bin etc.)
-    // S'assurer que le dossier directories/ existe (clearManaged le supprime).
-    mkdir("bcat:/directories", 0777);
-    bool ok = writeBundle(bundle, blen);
     free(bundle);
 
-    Result crc = fsdevCommitDevice("bcat");
-    logf_("commit: rc=0x%x", crc);
-    if (ok && R_FAILED(crc)) ok = false;
-
-    fsdevUnmountDevice("bcat"); // ferme aussi fs
-    logf_("=== resultat: %s ===", ok ? "OK" : "ECHEC");
+    logf_("=== resultat: %s ===", anyOk ? "OK" : "ECHEC");
     if (g_log) { fclose(g_log); g_log = NULL; }
 
-    return ok ? NB_OK : NB_BAD_BUNDLE;
+    if (anyOk) return NB_OK;
+    if (anyErr) return NB_WRITE_FAIL;
+    return NB_BAD_BUNDLE;
 }

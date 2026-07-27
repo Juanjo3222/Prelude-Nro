@@ -108,7 +108,10 @@
 // build 31 : v2.1.2. Fix browser "Función no disponible". Remove api.hac.lp1.ctest.srv.nintendo.net
 //            and wildcards *.srv.nintendo.net / *srv.nintendo.net from DNS-MITM hosts so the
 //            browser conntest (introduced FW 18.0+) resolves to real Nintendo instead of VPS.
-#define NEXTENDO_BUILD 31
+// build 32 : v2.1.3. Fix Splatoon 2 schedule installer. Replace BCAT SaveData mount with
+//            Atmosphere LayeredFS (sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/)
+//            for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
+#define NEXTENDO_BUILD 32
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
