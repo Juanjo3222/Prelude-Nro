@@ -15,9 +15,10 @@
 
 // ============================================================
 //  Nextendo .nro — installation du planning Splatoon 2 via LayeredFS.
-//  Telecharge un bundle NXBC depuis le serveur Nextendo et extrait les fichiers
-//  de donnees (coopdata/*.byaml, vsdata/*.byaml, fesdata/*) dans le dossier
-//  LayeredFS d'Atmosphere pour les regions USA et EUR.
+//  Copie les fichiers de donnees (coopdata/*.byaml, vsdata/*.byaml, fesdata/*,
+//  System/GameConfigSetting.xml) depuis la romfs embarque du .nro vers le dossier
+//  LayeredFS d'Atmosphere sur la carte SD pour les regions USA et EUR.
+//  Aucune connexion reseau requise : les donnees sont livrees avec le .nro.
 // ============================================================
 #ifndef NEXTENDO_BCAT_H
 #define NEXTENDO_BCAT_H

@@ -112,7 +112,10 @@
 //            Atmosphere LayeredFS (sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/)
 //            for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
 // build 33 : v2.1.4. Set real Nextendo server IP (51.178.29.194) in config replacing placeholder.
-#define NEXTENDO_BUILD 33
+// build 34 : v2.1.5. Splatoon 2 schedule: embed .byaml/.bfres data in NRO romfs instead of
+//            downloading from server (which returned "no available server"). The installer now
+//            copies files from romfs:/bcatdata/ to LayeredFS paths on SD — no network needed.
+#define NEXTENDO_BUILD 34
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo

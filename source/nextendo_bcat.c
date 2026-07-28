@@ -16,38 +16,34 @@
 // ============================================================
 //  Nextendo .nro — Splatoon 2 schedule installer via LayeredFS.
 //
-//  Extracts schedule payloads (coopdata, vsdata, fesdata) from the server's
-//  NXBC bundle and writes them into Atmosphere's LayeredFS override path:
-//    sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/
-//  Works for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
+//  Copies pre-embedded payload files from the NRO's own romfs
+//  (coopdata, vsdata, fesdata, System/GameConfigSetting.xml)
+//  directly into Atmosphere's LayeredFS override path:
+//    sdmc:/atmosphere/contents/<title_id>/romfs/
+//  Works for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000).
 //
-//  BCAT SaveData was replaced by LayeredFS because Splatoon 2 reads its
-//  schedules from ROMFS, not the BCAT delivery cache. Atmosphere's fs.mitm
-//  intercepts the ROMFS reads at the fsp-srv level and serves our files instead.
+//  No network download, no NXBC bundle parsing. The files are shipped
+//  inside the .nro and updated with each new release.
 // ============================================================
 #include <switch.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
 
 #include "nextendo_bcat.h"
-#include "nextendo_net.h"
-#include "nextendo_config.h"
 
-#define S2_TITLE_ID_USA "01003BC0000A0000"
-#define S2_TITLE_ID_EUR "0100F8F0000A2000"
-#define LAYEREDFS_BASE  "sdmc:/atmosphere/contents/%s/romfs/DebugUnderPilot/bcat"
-#define BCAT_HOST       NEXTENDO_SERVER_HOST
-#define BCAT_PORT       443
-#define BCAT_PATH       "/api/bcat/0100f8f0000a2000/cache"
+#define ROMFS_BCAT_BASE "romfs:/bcatdata"
+#define LAYEREDFS_BASE  "sdmc:/atmosphere/contents/%s/romfs"
 #define LOG_PATH        "sdmc:/nextendo_bcat.log"
 
 static FILE *g_log = NULL;
 Result g_last_rc = 0;
+
 static void logf_(const char *fmt, ...) {
     if (!g_log) return;
     va_list ap;
@@ -58,23 +54,31 @@ static void logf_(const char *fmt, ...) {
     fflush(g_log);
 }
 
-static void ensureParent(const char *filePath) {
-    char dir[FS_MAX_PATH];
-    size_t len = strnlen(filePath, sizeof(dir) - 1);
-    memcpy(dir, filePath, len);
-    dir[len] = '\0';
-    char *slash = strrchr(dir, '/');
-    if (!slash) return;
-    *slash = '\0';
-    char *p = strchr(dir, ':');
-    p = p ? p + 1 : dir;
+// mkdir -p for Switch SD paths (e.g. "sdmc:/a/b/c")
+static bool ensureDir(const char *path) {
+    char tmp[FS_MAX_PATH];
+    size_t len = strnlen(path, sizeof(tmp) - 1);
+    memcpy(tmp, path, len);
+    tmp[len] = '\0';
+
+    // Walk past device prefix (e.g. "sdmc:")
+    char *p = strchr(tmp, ':');
+    p = p ? p + 1 : tmp;
     if (*p == '/') p++;
+
     for (; *p; p++) {
-        if (*p == '/') { *p = '\0'; mkdir(dir, 0777); *p = '/'; }
+        if (*p == '/') {
+            *p = '\0';
+            int rc = mkdir(tmp, 0777);
+            *p = '/';
+            if (rc != 0 && errno != EEXIST) return false;
+        }
     }
-    mkdir(dir, 0777);
+    int rc = mkdir(tmp, 0777);
+    return rc == 0 || errno == EEXIST;
 }
 
+// Recursively remove a directory tree.
 static void wipeTree(const char *path) {
     DIR *d = opendir(path);
     if (!d) return;
@@ -94,190 +98,107 @@ static void wipeTree(const char *path) {
     closedir(d);
 }
 
-static void clearLayeredFS(const char *base) {
-    char p[FS_MAX_PATH];
-    snprintf(p, sizeof(p), "%s/coopdata", base); wipeTree(p); rmdir(p);
-    snprintf(p, sizeof(p), "%s/vsdata",    base); wipeTree(p); rmdir(p);
-    snprintf(p, sizeof(p), "%s/fesdata",   base); wipeTree(p); rmdir(p);
-    snprintf(p, sizeof(p), "%s/dummy",     base); wipeTree(p); rmdir(p);
-}
+// Copy a single file from romfs to sdmc.
+static bool copyFile(const char *src, const char *dst) {
+    FILE *in = fopen(src, "rb");
+    if (!in) { logf_("  ECHEC fopen source %s", src); return false; }
 
-static bool writeFileB(const char *path, const unsigned char *data, u32 len) {
-    ensureParent(path);
-    FILE *f = fopen(path, "wb");
-    if (!f) { logf_("  ECHEC fopen %s", path); return false; }
-    bool ok = (len == 0) || (fwrite(data, 1, len, f) == len);
-    fclose(f);
-    if (!ok) logf_("  ECHEC fwrite %s (%u o)", path, len);
+    if (!ensureDir(dst)) {
+        logf_("  ECHEC ensureDir %s", dst);
+        fclose(in);
+        return false;
+    }
+
+    FILE *out = fopen(dst, "wb");
+    if (!out) { logf_("  ECHEC fopen dest %s", dst); fclose(in); return false; }
+
+    char buf[8192];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            logf_("  ECHEC fwrite %s", dst);
+            ok = false;
+            break;
+        }
+    }
+    fclose(in);
+    fclose(out);
     return ok;
 }
 
-// Extracts a clean ROMFS path from a BCAT bundle path.
-// Bundle paths come as:
-//   directories.meta                          -> skip (metadata)
-//   directories/<digest>/coopdata/Setting.byml -> "coopdata/Setting.byml"
-//   coopdata/Setting.byml                     -> "coopdata/Setting.byml" (pass-through)
-static const char *dataRelPath(const char *rel) {
-    if (strcmp(rel, "directories.meta") == 0) return NULL;
-    if (strcmp(rel, "files.meta") == 0) return NULL;
-    if (strncmp(rel, "directories/", 12) == 0) {
-        const char *slash = strchr(rel + 12, '/');
-        if (slash && slash[1] != '\0') return slash + 1;
-        return NULL;
-    }
-    if (strchr(rel, '/') != NULL) return rel;
-    return NULL;
-}
-
-static bool writeBundleTo(const unsigned char *b, size_t len, const char *basePath) {
-    if (len < 8 || memcmp(b, "NXBC", 4) != 0) { logf_("bundle: magic invalide"); return false; }
-    u32 count;
-    memcpy(&count, b + 4, 4);
-    logf_("bundle: %u blobs", count);
-    size_t off = 8;
-    u32 written = 0;
-    for (u32 i = 0; i < count; i++) {
-        if (off + 2 > len) return false;
-        u16 pl;
-        memcpy(&pl, b + off, 2);
-        off += 2;
-        if (off + (size_t)pl + 4 > len) return false;
-        char rel[FS_MAX_PATH];
-        size_t n = (pl < sizeof(rel) - 1) ? pl : sizeof(rel) - 1;
-        memcpy(rel, b + off, n);
-        rel[n] = '\0';
-        off += pl;
-        u32 dl;
-        memcpy(&dl, b + off, 4);
-        off += 4;
-        if (off + (size_t)dl > len) return false;
-        // Securite : rejeter les traversees de repertoire et les chemins absolus.
-        if (strstr(rel, "..") != NULL || rel[0] == '/' || strchr(rel, ':') != NULL || rel[0] == '\0') {
-            logf_("  REJETE chemin invalide: \"%s\"", rel);
-            return false;
+// Recursive copy of a directory tree. Mirrors the pattern used by
+// nextendo_apply.c::copyTreeRomfs for the cert/patch stack.
+static bool copyTree(const char *srcDir, const char *dstDir) {
+    DIR *d = opendir(srcDir);
+    if (!d) { logf_("  opendir ECHEC %s", srcDir); return false; }
+    struct dirent *e;
+    bool allOk = true;
+    while ((e = readdir(d)) != NULL) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char sp[FS_MAX_PATH], dp[FS_MAX_PATH];
+        snprintf(sp, sizeof(sp), "%s/%s", srcDir, e->d_name);
+        snprintf(dp, sizeof(dp), "%s/%s", dstDir, e->d_name);
+        struct stat st;
+        if (stat(sp, &st) == 0 && S_ISDIR(st.st_mode)) {
+            if (!ensureDir(dp)) {
+                logf_("  ECHEC mkdir %s", dp);
+                allOk = false;
+            } else if (!copyTree(sp, dp)) {
+                allOk = false;
+            }
+        } else {
+            if (!copyFile(sp, dp)) {
+                allOk = false;
+            } else {
+                logf_("  %s", e->d_name);
+            }
         }
-
-        const char *dataRel = dataRelPath(rel);
-        if (!dataRel) {
-            logf_("  ignore %s (meta/unknown)", rel);
-            continue;
-        }
-
-        char path[FS_MAX_PATH];
-        snprintf(path, sizeof(path), "%s/%s", basePath, dataRel);
-        if (!writeFileB(path, b + off, dl)) return false;
-        logf_("  ok %s (%u o)", dataRel, dl);
-        written++;
-        off += dl;
     }
-    logf_("bundle: %u fichiers ecrits sur %u blobs", written, count);
-    return written > 0;
+    closedir(d);
+    return allOk;
 }
 
 nextendo_bcat_result nextendo_bcat_install_s2(void) {
     g_log = fopen(LOG_PATH, "w");
-    logf_("=== Nextendo BCAT install S2 (v4 — LayeredFS) ===");
+    logf_("=== Nextendo BCAT install S2 (v5 — romfs embarquee) ===");
 
-    // Download the BCAT bundle to a temp file on SD card instead of buffering
-    // in RAM. The Switch has limited heap (especially in applet mode) and the
-    // doubling realloc in net_https_get can cause fragmentation at 4 MB.
-    const char *tmpPath = "sdmc:/nextendo_bcat.bundle";
-    FILE *tmpFile = fopen(tmpPath, "wb");
-    if (!tmpFile) {
-        logf_("ECHEC: impossible de creer le fichier temp %s", tmpPath);
-        if (g_log) fclose(g_log);
-        return NB_NET_FAIL;
-    }
-
-    int status = 0;
-    sslInitialize(1);
-    long bodyBytes = net_https_get_to_file(BCAT_HOST, BCAT_PATH, tmpFile, &status);
-    sslExit();
-    fclose(tmpFile);
-
-    logf_("https: status=%d body=%ld o", status, bodyBytes);
-    if (bodyBytes < 0) {
-        remove(tmpPath);
-        switch (status) {
-            case NET_ERR_CONNECT:
-                logf_("ECHEC: serveur %s:%d injoignable", BCAT_HOST, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_CONNECT;
-            case NET_ERR_TIMEOUT:
-                logf_("ECHEC: timeout reponse %s:%d", BCAT_HOST, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_TIMEOUT;
-            case NET_ERR_PROTO:
-                logf_("ECHEC: reponse HTTPS invalide depuis %s:%d", BCAT_HOST, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_HTTP_ERR;
-            default:
-                logf_("ECHEC: erreur reseau %d (serveur %s:%d)", status, BCAT_HOST, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_FAIL;
-        }
-    }
-    if (status == 204) {
-        remove(tmpPath);
-        logf_("204 : rien de publie");
-        if (g_log) fclose(g_log);
-        return NB_NO_SCHEDULE;
-    }
-    if (status != 200 || bodyBytes < 8) {
-        logf_("ECHEC: status HTTP %d attendu 200, body=%ld o", status, bodyBytes);
-        remove(tmpPath);
-        if (g_log) fclose(g_log);
-        return NB_NET_HTTP_ERR;
-    }
-
-    // Read the temp file back into a single exact-size allocation.
-    size_t blen = (size_t)bodyBytes;
-    unsigned char *bundle = (unsigned char *)malloc(blen);
-    if (!bundle) {
-        logf_("ECHEC: malloc(%zu) impossible", blen);
-        remove(tmpPath);
-        if (g_log) fclose(g_log);
-        return NB_NET_FAIL;
-    }
-    tmpFile = fopen(tmpPath, "rb");
-    if (!tmpFile || fread(bundle, 1, blen, tmpFile) != blen) {
-        logf_("ECHEC: lecture du fichier temp");
-        if (tmpFile) fclose(tmpFile);
-        free(bundle);
-        remove(tmpPath);
-        if (g_log) fclose(g_log);
-        return NB_NET_FAIL;
-    }
-    fclose(tmpFile);
-    remove(tmpPath);
-    logf_("bundle: %zu o lus du fichier temp", blen);
-
-    const char *regionIds[] = { S2_TITLE_ID_USA, S2_TITLE_ID_EUR };
+    const char *regionIds[] = { "01003BC0000A0000", "0100F8F0000A2000" };
     bool anyOk = false;
-    bool anyErr = false;
 
     for (int r = 0; r < 2; r++) {
-        char base[FS_MAX_PATH];
-        snprintf(base, sizeof(base), LAYEREDFS_BASE, regionIds[r]);
+        char srcBase[FS_MAX_PATH], dstBase[FS_MAX_PATH];
+        snprintf(srcBase, sizeof(srcBase), "%s/%s/romfs", ROMFS_BCAT_BASE, regionIds[r]);
+        snprintf(dstBase, sizeof(dstBase), LAYEREDFS_BASE,  regionIds[r]);
 
         logf_("--- region %s ---", regionIds[r]);
-        clearLayeredFS(base);
+        logf_("  source romfs: %s", srcBase);
+        logf_("  dest   sdmc:  %s", dstBase);
 
-        if (writeBundleTo(bundle, blen, base)) {
-            logf_("region %s: OK", regionIds[r]);
+        struct stat st;
+        if (stat(srcBase, &st) != 0 || !S_ISDIR(st.st_mode)) {
+            logf_("  INEXISTANT dans la romfs — ce build ne couvre peut-etre pas cette region");
+            continue;
+        }
+
+        char debugDir[FS_MAX_PATH];
+        snprintf(debugDir, sizeof(debugDir), "%s/DebugUnderPilot", dstBase);
+        wipeTree(debugDir); rmdir(debugDir);
+        char sysDir[FS_MAX_PATH];
+        snprintf(sysDir, sizeof(sysDir), "%s/System", dstBase);
+        wipeTree(sysDir); rmdir(sysDir);
+
+        if (copyTree(srcBase, dstBase)) {
+            logf_("  region %s: OK", regionIds[r]);
             anyOk = true;
         } else {
-            logf_("region %s: ECHEC", regionIds[r]);
-            anyErr = true;
+            logf_("  region %s: ECHEC", regionIds[r]);
         }
     }
-
-    free(bundle);
 
     logf_("=== resultat: %s ===", anyOk ? "OK" : "ECHEC");
     if (g_log) { fclose(g_log); g_log = NULL; }
 
     if (anyOk) return NB_OK;
-    if (anyErr) return NB_WRITE_FAIL;
-    return NB_BAD_BUNDLE;
+    return NB_WRITE_FAIL;
 }
