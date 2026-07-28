@@ -103,7 +103,19 @@
 // build 28 : v2.0.9. Fix input freeze (consoleUpdate(NULL) in main loop).
 // build 29 : v2.1.0. Auto-update via GitHub API (HTTPS) directly, no VPS dependency.
 //            Uses Switch native SSL service for HTTPS. Adds net_https_get/_to_file.
-#define NEXTENDO_BUILD 29
+// build 30 : v2.1.1. Startup update check via HTTP (no SSL) to fix 'Función no disponible'
+//            on login after exiting Prelude (sslInit/sslExit side effect on system SSL service).
+// build 31 : v2.1.2. Fix browser "Función no disponible". Remove api.hac.lp1.ctest.srv.nintendo.net
+//            and wildcards *.srv.nintendo.net / *srv.nintendo.net from DNS-MITM hosts so the
+//            browser conntest (introduced FW 18.0+) resolves to real Nintendo instead of VPS.
+// build 32 : v2.1.3. Fix Splatoon 2 schedule installer. Replace BCAT SaveData mount with
+//            Atmosphere LayeredFS (sdmc:/atmosphere/contents/<title_id>/romfs/DebugUnderPilot/bcat/)
+//            for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000) versions.
+// build 33 : v2.1.4. Set real Nextendo server IP (51.178.29.194) in config replacing placeholder.
+// build 34 : v2.1.5. Splatoon 2 schedule: embed .byaml/.bfres data in NRO romfs instead of
+//            downloading from server (which returned "no available server"). The installer now
+//            copies files from romfs:/bcatdata/ to LayeredFS paths on SD — no network needed.
+#define NEXTENDO_BUILD 34
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo

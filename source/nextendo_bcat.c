@@ -14,37 +14,36 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // ============================================================
-//  Nextendo .nro — installation du planning BCAT de Splatoon 2.
+//  Nextendo .nro — Splatoon 2 schedule installer via LayeredFS.
 //
-//  Le serveur (nextendo-account, bcat_cache.go) construit tout le save delivery-cache
-//  (directories.meta + files.meta + payloads bruts + digests reverse-MD5) et le serialise
-//  en un bundle "NXBC". Ici on ne fait que : monter le save BCAT de S2, remplacer NOTRE
-//  partie (directories.meta + directories/) en PRESERVANT les fichiers propres a S2
-//  (passphrase.bin / list.msgpack / etag.bin / na_required), ecrire, committer.
+//  Copies pre-embedded payload files from the NRO's own romfs
+//  (coopdata, vsdata, fesdata, System/GameConfigSetting.xml)
+//  directly into Atmosphere's LayeredFS override path:
+//    sdmc:/atmosphere/contents/<title_id>/romfs/
+//  Works for both USA (01003BC0000A0000) and EUR (0100F8F0000A2000).
 //
-//  Permissions : un .nro lance via HBL herite des droits FS d'Atmosphere (comme JKSV).
-//  Un log est ecrit sur sdmc:/nextendo_bcat.log pour diagnostic.
+//  No network download, no NXBC bundle parsing. The files are shipped
+//  inside the .nro and updated with each new release.
 // ============================================================
 #include <switch.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
 
 #include "nextendo_bcat.h"
-#include "nextendo_net.h"
 
-#define S2_TITLE_ID 0x0100F8F0000A2000ULL
-#define BCAT_IP     "51.178.29.194"
-#define BCAT_PORT   8095
-#define BCAT_PATH   "/api/bcat/0100f8f0000a2000/cache"
-#define LOG_PATH    "sdmc:/nextendo_bcat.log"
+#define ROMFS_BCAT_BASE "romfs:/bcatdata"
+#define LAYEREDFS_BASE  "sdmc:/atmosphere/contents/%s/romfs"
+#define LOG_PATH        "sdmc:/nextendo_bcat.log"
 
 static FILE *g_log = NULL;
-Result g_last_rc = 0;   // dernier rc FS, affiché à l'écran en cas d'erreur
+Result g_last_rc = 0;
+
 static void logf_(const char *fmt, ...) {
     if (!g_log) return;
     va_list ap;
@@ -55,25 +54,31 @@ static void logf_(const char *fmt, ...) {
     fflush(g_log);
 }
 
-// mkdir -p sur le DOSSIER PARENT d'un chemin de fichier (fonctionne avec le prefixe "bcat:").
-static void ensureParent(const char *filePath) {
-    char dir[FS_MAX_PATH];
-    size_t len = strnlen(filePath, sizeof(dir) - 1);
-    memcpy(dir, filePath, len);
-    dir[len] = '\0';
-    char *slash = strrchr(dir, '/');
-    if (!slash) return;
-    *slash = '\0';
-    char *p = strchr(dir, ':');
-    p = p ? p + 1 : dir;
+// mkdir -p for Switch SD paths (e.g. "sdmc:/a/b/c")
+static bool ensureDir(const char *path) {
+    char tmp[FS_MAX_PATH];
+    size_t len = strnlen(path, sizeof(tmp) - 1);
+    memcpy(tmp, path, len);
+    tmp[len] = '\0';
+
+    // Walk past device prefix (e.g. "sdmc:")
+    char *p = strchr(tmp, ':');
+    p = p ? p + 1 : tmp;
     if (*p == '/') p++;
+
     for (; *p; p++) {
-        if (*p == '/') { *p = '\0'; mkdir(dir, 0777); *p = '/'; }
+        if (*p == '/') {
+            *p = '\0';
+            int rc = mkdir(tmp, 0777);
+            *p = '/';
+            if (rc != 0 && errno != EEXIST) return false;
+        }
     }
-    mkdir(dir, 0777);
+    int rc = mkdir(tmp, 0777);
+    return rc == 0 || errno == EEXIST;
 }
 
-// Supprime recursivement le CONTENU d'un dossier monte (le dossier lui-meme reste).
+// Recursively remove a directory tree.
 static void wipeTree(const char *path) {
     DIR *d = opendir(path);
     if (!d) return;
@@ -93,177 +98,117 @@ static void wipeTree(const char *path) {
     closedir(d);
 }
 
-// Efface UNIQUEMENT ce qu'on gere : directories.meta + l'arbre directories/.
-// On NE TOUCHE PAS a passphrase.bin / list.msgpack / etag.bin / na_required (crees par S2).
-static void clearManaged(void) {
-    remove("bcat:/directories.meta");
-    wipeTree("bcat:/directories");
-    rmdir("bcat:/directories");
-}
+// Copy a single file from romfs to sdmc.
+static bool copyFile(const char *src, const char *dst) {
+    FILE *in = fopen(src, "rb");
+    if (!in) { logf_("  ECHEC fopen source %s", src); return false; }
 
-static bool writeFileB(const char *path, const unsigned char *data, u32 len) {
-    ensureParent(path);
-    FILE *f = fopen(path, "wb");
-    if (!f) { logf_("  ECHEC fopen %s", path); return false; }
-    bool ok = (len == 0) || (fwrite(data, 1, len, f) == len);
-    fclose(f);
-    if (!ok) logf_("  ECHEC fwrite %s (%u o)", path, len);
+    // Ensure the parent directory exists (dst is a file path).
+    char parent[FS_MAX_PATH];
+    size_t plen = strnlen(dst, sizeof(parent) - 1);
+    if (plen >= sizeof(parent)) plen = sizeof(parent) - 1;
+    memcpy(parent, dst, plen);
+    parent[plen] = '\0';
+    char *slash = strrchr(parent, '/');
+    if (slash) {
+        *slash = '\0';
+        if (!ensureDir(parent)) {
+            logf_("  ECHEC ensureDir %s", parent);
+            fclose(in);
+            return false;
+        }
+    }
+
+    FILE *out = fopen(dst, "wb");
+    if (!out) { logf_("  ECHEC fopen dest %s", dst); fclose(in); return false; }
+
+    char buf[8192];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            logf_("  ECHEC fwrite %s", dst);
+            ok = false;
+            break;
+        }
+    }
+    fclose(in);
+    fclose(out);
     return ok;
 }
 
-// Parse le bundle NXBC et ecrit chaque blob dans bcat:/<path>.
-//   "NXBC" | u32 count | count * [ u16 pathLen | path | u32 dataLen | data ]   (tout little-endian)
-static bool writeBundle(const unsigned char *b, size_t len) {
-    if (len < 8 || memcmp(b, "NXBC", 4) != 0) { logf_("bundle: magic invalide"); return false; }
-    u32 count;
-    memcpy(&count, b + 4, 4);
-    logf_("bundle: %u blobs", count);
-    size_t off = 8;
-    u32 totalBytes = 0;
-    for (u32 i = 0; i < count; i++) {
-        if (off + 2 > len) return false;
-        u16 pl;
-        memcpy(&pl, b + off, 2);
-        off += 2;
-        if (off + (size_t)pl + 4 > len) return false;
-        char rel[FS_MAX_PATH];
-        size_t n = (pl < sizeof(rel) - 1) ? pl : sizeof(rel) - 1;
-        memcpy(rel, b + off, n);
-        rel[n] = '\0';
-        off += pl;
-        u32 dl;
-        memcpy(&dl, b + off, 4);
-        off += 4;
-        if (off + (size_t)dl > len) return false;
-        // Securite : rejeter les traversees de repertoire et les chemins absolus.
-        if (strstr(rel, "..") != NULL || rel[0] == '/' || strchr(rel, ':') != NULL || rel[0] == '\0') {
-            logf_("  REJETE chemin invalide: \"%s\"", rel);
-            return false;
+// Recursive copy of a directory tree. Mirrors the pattern used by
+// nextendo_apply.c::copyTreeRomfs for the cert/patch stack.
+static bool copyTree(const char *srcDir, const char *dstDir) {
+    DIR *d = opendir(srcDir);
+    if (!d) { logf_("  opendir ECHEC %s", srcDir); return false; }
+    struct dirent *e;
+    bool allOk = true;
+    while ((e = readdir(d)) != NULL) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char sp[FS_MAX_PATH], dp[FS_MAX_PATH];
+        snprintf(sp, sizeof(sp), "%s/%s", srcDir, e->d_name);
+        snprintf(dp, sizeof(dp), "%s/%s", dstDir, e->d_name);
+        struct stat st;
+        if (stat(sp, &st) == 0 && S_ISDIR(st.st_mode)) {
+            if (!ensureDir(dp)) {
+                logf_("  ECHEC mkdir %s", dp);
+                allOk = false;
+            } else if (!copyTree(sp, dp)) {
+                allOk = false;
+            }
+        } else {
+            if (!copyFile(sp, dp)) {
+                allOk = false;
+            } else {
+                logf_("  %s", e->d_name);
+            }
         }
-        char path[FS_MAX_PATH];
-        snprintf(path, sizeof(path), "bcat:/%s", rel);
-        if (!writeFileB(path, b + off, dl)) return false;
-        logf_("  ok %s (%u o)", rel, dl);
-        totalBytes += dl;
-        off += dl;
     }
-    logf_("bundle: %u o ecrits au total", totalBytes);
-    return true;
+    closedir(d);
+    return allOk;
 }
 
 nextendo_bcat_result nextendo_bcat_install_s2(void) {
     g_log = fopen(LOG_PATH, "w");
-    logf_("=== Nextendo BCAT install S2 (v2) ===");
+    logf_("=== Nextendo BCAT install S2 (v5 — romfs embarquee) ===");
 
-    size_t blen = 0;
-    int status = 0;
-    unsigned char *bundle = net_http_get(BCAT_IP, BCAT_PORT, BCAT_PATH, &blen, &status);
-    logf_("http: status=%d body=%zu o", status, blen);
-    if (!bundle) {
-        switch (status) {
-            case NET_ERR_CONNECT:
-                logf_("ECHEC: serveur %s:%d injoignable", BCAT_IP, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_CONNECT;
-            case NET_ERR_TIMEOUT:
-                logf_("ECHEC: timeout reponse %s:%d", BCAT_IP, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_TIMEOUT;
-            case NET_ERR_PROTO:
-                logf_("ECHEC: reponse HTTP invalide depuis %s:%d", BCAT_IP, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_HTTP_ERR;
-            default:
-                logf_("ECHEC: erreur reseau %d (serveur %s:%d)", status, BCAT_IP, BCAT_PORT);
-                if (g_log) fclose(g_log);
-                return NB_NET_FAIL;
+    const char *regionIds[] = { "01003BC0000A0000", "0100F8F0000A2000" };
+    bool anyOk = false;
+
+    for (int r = 0; r < 2; r++) {
+        char srcBase[FS_MAX_PATH], dstBase[FS_MAX_PATH];
+        snprintf(srcBase, sizeof(srcBase), "%s/%s/romfs", ROMFS_BCAT_BASE, regionIds[r]);
+        snprintf(dstBase, sizeof(dstBase), LAYEREDFS_BASE,  regionIds[r]);
+
+        logf_("--- region %s ---", regionIds[r]);
+        logf_("  source romfs: %s", srcBase);
+        logf_("  dest   sdmc:  %s", dstBase);
+
+        struct stat st;
+        if (stat(srcBase, &st) != 0 || !S_ISDIR(st.st_mode)) {
+            logf_("  INEXISTANT dans la romfs — ce build ne couvre peut-etre pas cette region");
+            continue;
+        }
+
+        char debugDir[FS_MAX_PATH];
+        snprintf(debugDir, sizeof(debugDir), "%s/DebugUnderPilot", dstBase);
+        wipeTree(debugDir); rmdir(debugDir);
+        char sysDir[FS_MAX_PATH];
+        snprintf(sysDir, sizeof(sysDir), "%s/System", dstBase);
+        wipeTree(sysDir); rmdir(sysDir);
+
+        if (copyTree(srcBase, dstBase)) {
+            logf_("  region %s: OK", regionIds[r]);
+            anyOk = true;
+        } else {
+            logf_("  region %s: ECHEC", regionIds[r]);
         }
     }
-    if (status == 204) {
-        free(bundle);
-        logf_("204 : rien de publie");
-        if (g_log) fclose(g_log);
-        return NB_NO_SCHEDULE;
-    }
-    if (status != 200 || blen < 8) {
-        logf_("ECHEC: status HTTP %d attendu 200, body=%zu o", status, blen);
-        free(bundle);
-        if (g_log) fclose(g_log);
-        return NB_NET_HTTP_ERR;
-    }
 
-    FsFileSystem fs;
-    Result rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
-    g_last_rc = rc;
-    logf_("fsOpen_BcatSaveData: rc=0x%x", rc);
-    if (R_FAILED(rc)) {
-        logf_("tentative creation du save BCAT...");
-        FsSaveDataAttribute attr;
-        memset(&attr, 0, sizeof(attr));
-        attr.application_id   = S2_TITLE_ID;
-        attr.save_data_type   = FsSaveDataType_Bcat;
-
-        FsSaveDataCreationInfo info;
-        memset(&info, 0, sizeof(info));
-        info.save_data_size     = 0x400000;
-        info.journal_size       = 0x100000;
-        info.available_size     = 0x4000;
-        info.owner_id           = S2_TITLE_ID;
-        info.flags              = 0;
-        info.save_data_space_id = FsSaveDataSpaceId_User;
-
-        // JKSV (save-manager de reference) utilise 0x40060 / Thumbnail. switchbrew.org confirme
-        // que le FS rejecte size=sizeof(meta) / type=None lors d'un appel externe.
-        FsSaveDataMetaInfo meta;
-        memset(&meta, 0, sizeof(meta));
-        meta.size = 0x40060;
-        meta.type = FsSaveDataMetaType_Thumbnail;
-
-        rc = fsCreateSaveDataFileSystem(&attr, &info, &meta);
-        g_last_rc = rc;
-        logf_("fsCreateSaveDataFileSystem: rc=0x%x", rc);
-        if (R_SUCCEEDED(rc)) {
-            logf_("save BCAT cree, nouvelle tentative d'ouverture...");
-            rc = fsOpen_BcatSaveData(&fs, S2_TITLE_ID);
-            g_last_rc = rc;
-            logf_("fsOpen_BcatSaveData (2): rc=0x%x", rc);
-        }
-        if (R_FAILED(rc)) {
-            logf_("ECHEC: impossible d'ouvrir/creer le save BCAT");
-            free(bundle);
-            if (g_log) fclose(g_log);
-            return NB_MOUNT_FAIL;
-        }
-    }
-    int mount_rc = fsdevMountDevice("bcat", fs);
-    if (mount_rc < 0) {
-        g_last_rc = (Result)mount_rc;
-        fsFsClose(&fs);
-        free(bundle);
-        logf_("fsdevMountDevice: rc=%d", mount_rc);
-        if (g_log) fclose(g_log);
-        return NB_MOUNT_FAIL;
-    }
-    g_last_rc = 0;
-
-    // Journalise ce qui EXISTE deja dans le save (avant modif) — diagnostic.
-    logf_("--- contenu save AVANT ---");
-    DIR *d = opendir("bcat:/");
-    if (d) { struct dirent *e; while ((e = readdir(d))) if (strcmp(e->d_name,".")&&strcmp(e->d_name,"..")) logf_("  %s", e->d_name); closedir(d); }
-
-    clearManaged();      // efface seulement directories.meta + directories/ (garde passphrase.bin etc.)
-    // S'assurer que le dossier directories/ existe (clearManaged le supprime).
-    mkdir("bcat:/directories", 0777);
-    bool ok = writeBundle(bundle, blen);
-    free(bundle);
-
-    Result crc = fsdevCommitDevice("bcat");
-    logf_("commit: rc=0x%x", crc);
-    if (ok && R_FAILED(crc)) ok = false;
-
-    fsdevUnmountDevice("bcat"); // ferme aussi fs
-    logf_("=== resultat: %s ===", ok ? "OK" : "ECHEC");
+    logf_("=== resultat: %s ===", anyOk ? "OK" : "ECHEC");
     if (g_log) { fclose(g_log); g_log = NULL; }
 
-    return ok ? NB_OK : NB_BAD_BUNDLE;
+    if (anyOk) return NB_OK;
+    return NB_WRITE_FAIL;
 }
