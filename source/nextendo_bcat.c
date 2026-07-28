@@ -103,10 +103,20 @@ static bool copyFile(const char *src, const char *dst) {
     FILE *in = fopen(src, "rb");
     if (!in) { logf_("  ECHEC fopen source %s", src); return false; }
 
-    if (!ensureDir(dst)) {
-        logf_("  ECHEC ensureDir %s", dst);
-        fclose(in);
-        return false;
+    // Ensure the parent directory exists (dst is a file path).
+    char parent[FS_MAX_PATH];
+    size_t plen = strnlen(dst, sizeof(parent) - 1);
+    if (plen >= sizeof(parent)) plen = sizeof(parent) - 1;
+    memcpy(parent, dst, plen);
+    parent[plen] = '\0';
+    char *slash = strrchr(parent, '/');
+    if (slash) {
+        *slash = '\0';
+        if (!ensureDir(parent)) {
+            logf_("  ECHEC ensureDir %s", parent);
+            fclose(in);
+            return false;
+        }
     }
 
     FILE *out = fopen(dst, "wb");
