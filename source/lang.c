@@ -302,9 +302,19 @@ static const char *s_strings[STR_COUNT][4] = {
                                   "A: Baixar e instalar",
                                   "A: Télécharger et installer" },
     [STR_UPD_CONFIRM_B]       = { "B: Cancel",
-                                  "B: Cancelar",
-                                  "B: Cancelar",
-                                  "B: Annuler" },
+                                   "B: Cancelar",
+                                   "B: Cancelar",
+                                   "B: Annuler" },
+
+    // --- Server switch toast ---
+    [STR_TOAST_SERVER_DEFAULT] = { "Server: VPS (51.178.29.194)",
+                                   "Servidor: VPS (51.178.29.194)",
+                                   "Servidor: VPS (51.178.29.194)",
+                                   "Serveur : VPS (51.178.29.194)" },
+    [STR_TOAST_SERVER_ALT]     = { "Server: Local (3.135.232.168)",
+                                   "Servidor: Local (3.135.232.168)",
+                                   "Servidor: Local (3.135.232.168)",
+                                   "Serveur : Local (3.135.232.168)" },
 };
 
 // ============================================================

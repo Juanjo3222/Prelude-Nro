@@ -482,3 +482,51 @@ void ui_draw_upd_confirm(int buildVer) {
 
     framebufferEnd(&s_fb);
 }
+
+// ------- Toast semi-transparent en bas de l'écran -------
+void ui_draw_toast(const char *text) {
+    u32 st;
+    u32 *b = (u32 *)framebufferBegin(&s_fb, &st);
+    u32 sw = st / sizeof(u32);
+
+    int tw = measureF(s_semi, 24, text);
+    int pad = 40;
+    int toastW = tw + pad * 2;
+    int toastH = 60;
+    int toastX = (FB_W - toastW) / 2;
+    int toastY = FB_H - toastH - 40;
+
+    // Fond semi-transparent noir
+    for (int y = toastY; y < toastY + toastH && y < FB_H; y++)
+        for (int x = toastX; x < toastX + toastW && x < FB_W; x++)
+            b[y * (sw) + x] = RGBA8(0, 0, 0, 200);
+
+    // Bordure arrondie (simulation)
+    u32 border = RGBA8(0x44, 0x88, 0xFF, 255);
+    for (int x = toastX; x < toastX + toastW && x < FB_W; x++) {
+        b[toastY * sw + x] = border;
+        b[(toastY + toastH - 1) * sw + x] = border;
+    }
+    for (int y = toastY; y < toastY + toastH && y < FB_H; y++) {
+        b[y * sw + toastX] = border;
+        b[y * sw + toastX + toastW - 1] = border;
+    }
+
+    // Texte centré
+    drawCF(b, st, s_semi, FB_W / 2, toastY + toastH / 2 + 8, 24, RGBA8(0xFF, 0xFF, 0xFF, 255), text);
+
+    framebufferEnd(&s_fb);
+}
+
+void ui_draw_loading(const char *text) {
+    u32 st;
+    u32 *b = (u32 *)framebufferBegin(&s_fb, &st);
+    u32 sw = st / sizeof(u32), bg = packColor(C_BG);
+    for (int y = 0; y < FB_H; y++)
+        for (int x = 0; x < FB_W; x++) b[y * sw + x] = bg;
+
+    drawCF(b, st, s_bold, FB_W / 2, FB_H / 2 - 24, 36, packColor(C_TITLE), "Prelude");
+    drawCF(b, st, s_semi, FB_W / 2, FB_H / 2 + 30, 26, packColor(C_S2), text ? text : "Cargando...");
+
+    framebufferEnd(&s_fb);
+}

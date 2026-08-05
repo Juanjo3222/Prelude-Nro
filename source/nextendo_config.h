@@ -30,4 +30,16 @@
 #define NEXTENDO_SERVER_HOST "51.178.29.194"
 #endif
 
+// IPs des serveurs disponibles (défaut + alternatif via code ↑↓←→).
+#define NEXTENDO_SERVER_IP_DEFAULT  "51.178.29.194"
+#define NEXTENDO_SERVER_IP_ALT      "3.135.232.168"
+#define NEXTENDO_SERVER_IP_NNCSD2   "164.132.111.120"
+
+// IP courante utilisée par les hosts dns.mitm (modifiable via ↑↓←→).
+extern char g_server_ip[];
+#define NEXTENDO_SERVER_IP_MAX 64
+
+// Renvoie le nom d'affichage du serveur courant.
+const char *server_display_name(void);
+
 #endif // NEXTENDO_CONFIG_H

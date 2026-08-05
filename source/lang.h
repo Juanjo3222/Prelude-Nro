@@ -128,6 +128,10 @@ typedef enum {
     STR_LANG_A_SELECT,          // "A: Select"
     STR_LANG_B_BACK,            // "B: Back"
 
+    // --- Server switch toast ---
+    STR_TOAST_SERVER_DEFAULT,   // "Servidor: VPS (51.178.29.194)"
+    STR_TOAST_SERVER_ALT,       // "Servidor: Local (3.135.232.168)"
+
     STR_COUNT
 } StringID;
 

@@ -29,6 +29,7 @@
 #include "ui.h"
 #include "audio.h"
 #include "nextendo_apply.h"
+#include "nextendo_config.h"
 #include "nextendo_bcat.h"
 #include "nextendo_update.h"
 #include "ui_theme.h"
@@ -82,13 +83,19 @@ int main(int argc, char **argv) {
     char rTitle[64] = {0}, rMsg[192] = {0};
     bool rOk = false;
 
+    // Séquence ↑↓←→ pour basculer l'IP du serveur.
+    enum { SEQ_IDLE, SEQ_UP, SEQ_UP_DOWN, SEQ_UP_DOWN_LEFT };
+    int seqState = SEQ_IDLE;
+    int toastFrames = 0;  // frames restantes d'affichage du toast
+
     // Verif de mise a jour au demarrage (affiche d'abord le picker pour ne pas rester noir).
-    ui_draw_picker(sel, current, focus, NULL, 0);
-    nextendo_trace("13 picker dessine, avant update_check (reseau)");
+    ui_draw_loading("Cargando...");
+    nextendo_trace("13 loading, antes de update_check (reseau)");
     NextendoUpdate upd = nextendo_update_check();
     nextendo_trace(upd.available ? "14 update_check: MAJ DISPO -> homebrew verrouille (A inactif)"
                                  : "14 update_check: a jour -> A actif");
     // Diagnostic reseau : nncs2 + etat hosts (trace pour 2123-0011 / 2810-1224).
+    ui_draw_loading("Verificando conexion...");
     socketInitializeDefault();
     nextendo_diag_network();
     // DNS warmup : Atmosphere's DNS-MITM is lazy-loaded (reads hosts on first DNS query).
@@ -96,6 +103,7 @@ int main(int argc, char **argv) {
     // Clover's workaround (BrowseNX from DBI title override) confirms any DNS query forces init;
     // we do it here so linking works without user workarounds.
     if (current == CHOICE_NEXTENDO) {
+        ui_draw_loading("Inicializando DNS...");
         struct hostent *he = gethostbyname("accounts.nintendo.com");
         nextendo_trace(he ? "15a dns warmup: accounts.nintendo.com OK"
                           : "15a dns warmup: accounts.nintendo.com FAIL");
@@ -111,6 +119,26 @@ int main(int argc, char **argv) {
         // Une seule fois : prouve que la boucle tourne ET que l'entree remonte (si A ne fait rien
         // alors que cette ligne est absente, c'est padUpdate/HID qui est mort, pas la logique).
         if (!tracedLoop && k) { nextendo_trace("16 premiere touche detectee dans la boucle"); tracedLoop = true; }
+
+        // --- Séquence ↑↓←→ : bascule l'IP du serveur ---
+        if (screen == SCREEN_PICKER && state == 0) {
+            if (seqState == SEQ_IDLE && (k & HidNpadButton_Up))            seqState = SEQ_UP;
+            else if (seqState == SEQ_UP && (k & HidNpadButton_Down))       seqState = SEQ_UP_DOWN;
+            else if (seqState == SEQ_UP_DOWN && (k & HidNpadButton_Left))  seqState = SEQ_UP_DOWN_LEFT;
+            else if (seqState == SEQ_UP_DOWN_LEFT && (k & HidNpadButton_Right)) {
+                if (strcmp(g_server_ip, NEXTENDO_SERVER_IP_DEFAULT) == 0)
+                    strncpy(g_server_ip, NEXTENDO_SERVER_IP_ALT, NEXTENDO_SERVER_IP_MAX - 1);
+                else
+                    strncpy(g_server_ip, NEXTENDO_SERVER_IP_DEFAULT, NEXTENDO_SERVER_IP_MAX - 1);
+                g_server_ip[NEXTENDO_SERVER_IP_MAX - 1] = '\0';
+                toastFrames = 120;  // ~2 secondes à 60fps
+                seqState = SEQ_IDLE;
+            } else if (k) {
+                seqState = SEQ_IDLE;
+            }
+        } else {
+            seqState = SEQ_IDLE;
+        }
 
         if (screen == SCREEN_PICKER) {
             if (state == 0) {
@@ -133,6 +161,12 @@ int main(int argc, char **argv) {
                 if (screen == SCREEN_PICKER && state == 0)
                     ui_draw_picker(sel, current, focus, status[0] ? status : NULL,
                                    upd.available ? upd.latest : 0);
+
+                // Toast du serveur
+                if (toastFrames > 0) {
+                    ui_draw_toast(server_display_name());
+                    toastFrames--;
+                }
             } else {
                 if (k & (HidNpadButton_B | HidNpadButton_Plus)) {
                     state = 0;
