@@ -113,6 +113,11 @@ char *nextendo_hosts_build(const char *ip) {
     snprintf(line, sizeof(line), "%s god.hac.lp1.penne.srv.nintendo.net\n", ip); EMIT_H(line);
     snprintf(line, sizeof(line), "%s dauth-lp1.ndas.srv.nintendo.net\n", ip);    EMIT_H(line);
     snprintf(line, sizeof(line), "%s aauth.hac.lp1.ndas.srv.nintendo.net\n", ip); EMIT_H(line);
+    // Wildcard g2* couvre TOUS les secure-servers NEX de chaque jeu (S2, MK8, SSBU,
+    // ACNH, Strikers, futurs). Chaque jeu a un hostname g2XXXXXXXX-lp1.s.n.srv.nintendo.net
+    // distinct ; sans cette ligne la console les resout au vrai Nintendo (52.26.143.x etc.)
+    // et l'authentification secure echoue avec 2306-0807 sur TOUS les jeux sauf S2.
+    snprintf(line, sizeof(line), "%s g2*.s.n.srv.nintendo.net\n", ip); EMIT_H(line);
     snprintf(line, sizeof(line), "%s    *.op2.nintendo.net\n", ip);       EMIT_H(line);
 
     EMIT_H("\n# --- 2) NAT-check #2 : IP differente de nncs1 (sinon MK8 test-103) ---\n");

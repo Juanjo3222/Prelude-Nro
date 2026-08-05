@@ -115,7 +115,10 @@
 // build 34 : v2.1.5. Splatoon 2 schedule: embed .byaml/.bfres data in NRO romfs instead of
 //            downloading from server (which returned "no available server"). The installer now
 //            copies files from romfs:/bcatdata/ to LayeredFS paths on SD — no network needed.
-#define NEXTENDO_BUILD 34
+// build 35 : v3.0.0. New BCAT schedules (Aug 3 EU, Jun 29 US). Wildcard g2*.s.n.srv.nintendo.net
+//            covers ALL game NEX secure servers (S2, MK8, SSBU, ACNH, Strikers). Fix linking
+//            (extras.self nxAccountBlob, api/token revert). NDAS aauth host + handler.
+#define NEXTENDO_BUILD 35
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo
