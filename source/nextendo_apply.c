@@ -113,10 +113,11 @@ char *nextendo_hosts_build(const char *ip) {
     snprintf(line, sizeof(line), "%s god.hac.lp1.penne.srv.nintendo.net\n", ip); EMIT_H(line);
     snprintf(line, sizeof(line), "%s dauth-lp1.ndas.srv.nintendo.net\n", ip);    EMIT_H(line);
     snprintf(line, sizeof(line), "%s aauth.hac.lp1.ndas.srv.nintendo.net\n", ip); EMIT_H(line);
-    // *.srv.nintendo.net etait dans v2.0.9/v2.1.0 et couvrait TOUS les jeux (MK8, S2...).
-    // Retire en v2.1.2 pour le browser, mais maintenant qu on a le conntest fix c est safe.
-    // d4c et ctest/conntest ne sont PAS sous srv.nintendo.net -> pas affectes.
+    // *.srv.nintendo.net et *srv.nintendo.net (sans point) etaient dans v2.0.9/v2.1.0
+    // et couvraient TOUS les jeux. Le deuxieme pattern (*srv) matche les hotes multi-label
+    // comme g2b309e01-lp1.s.n.srv.nintendo.net que le premier (*.srv) ne couvre pas.
     snprintf(line, sizeof(line), "%s    *.srv.nintendo.net\n", ip);       EMIT_H(line);
+    snprintf(line, sizeof(line), "%s    *srv.nintendo.net\n", ip);        EMIT_H(line);
     // Wildcard g2* couvre TOUS les secure-servers NEX. En plus, on ajoute les
     // hotes EXPLICITES de chaque jeu au cas ou le wildcard ne matche pas dans
     // Atmosphere (le * mid-label peut etre ignore sur certains builds).
