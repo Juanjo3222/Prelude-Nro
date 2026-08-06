@@ -118,7 +118,10 @@
 // build 35 : v3.0.0. New BCAT schedules (Aug 3 EU, Jun 29 US). Wildcard g2*.s.n.srv.nintendo.net
 //            covers ALL game NEX secure servers (S2, MK8, SSBU, ACNH, Strikers). Fix linking
 //            (extras.self nxAccountBlob, api/token revert). NDAS aauth host + handler.
-#define NEXTENDO_BUILD 35
+// build 36 : v3.0.2. Remove *.op2.nintendo.net wildcard (caused 2219-4001 on ACNH). Add
+//            conntest.nintendowifi.net + ctest.cdn.nintendo.net redirects (fix browser
+//            "This feature is not available"). BCAT from bcat-seed.zip.
+#define NEXTENDO_BUILD 36
 
 typedef struct {
     bool available;   // une version > NEXTENDO_BUILD est dispo

@@ -118,7 +118,9 @@ char *nextendo_hosts_build(const char *ip) {
     // distinct ; sans cette ligne la console les resout au vrai Nintendo (52.26.143.x etc.)
     // et l'authentification secure echoue avec 2306-0807 sur TOUS les jeux sauf S2.
     snprintf(line, sizeof(line), "%s g2*.s.n.srv.nintendo.net\n", ip); EMIT_H(line);
-    snprintf(line, sizeof(line), "%s    *.op2.nintendo.net\n", ip);       EMIT_H(line);
+    // *.op2.nintendo.net RETIRÉ (v3.0.2): trop large — attrapait des sous-domaines
+    // op2 non gérés par le VPS (authorization server, entitlement check) → 404 → erreurs
+    // 2219-4001 (ACNH). On garde capi.lp1.op2.nintendo.net (ligne au-dessus) qui suffit.
 
     EMIT_H("\n# --- 2) NAT-check #2 : IP differente de nncs1 (sinon MK8 test-103) ---\n");
     snprintf(line, sizeof(line), "%s  nncs2-*.n.n.srv.nintendo.net\n", nncs2_ip); EMIT_H(line);
@@ -130,9 +132,11 @@ char *nextendo_hosts_build(const char *ip) {
     EMIT_H("\n# --- 4) d4c (MAJ systeme) -> NON REDIRIGE ---\n");
     EMIT_H("# NE PAS null-router : nim stocke un flag persistant.\n\n");
 
-    EMIT_H("\n# --- 5) conntest (browser connectivity check) -> NON REDIRIGE ---\n");
-    EMIT_H("# conntest.nintendowifi.net / ctest.cdn.nintendo.net resolvent vers\n");
-    EMIT_H("# le vrai Nintendo pour que le browser s'ouvre (X-Organization: Nintendo).\n");
+    EMIT_H("\n# --- 5) conntest (browser connectivity check) -> serveur conntest Nextendo ---\n");
+    EMIT_H("# Le vrai Nintendo bloque parfois le conntest → \"This feature is not available\".\n");
+    EMIT_H("# On le redirige vers notre serveur qui repond X-Organization: Nintendo + 200 OK.\n");
+    snprintf(line, sizeof(line), "%s conntest.nintendowifi.net\n", ip); EMIT_H(line);
+    snprintf(line, sizeof(line), "%s ctest.cdn.nintendo.net\n", ip);    EMIT_H(line);
 
     #undef EMIT_H
     return buf;
