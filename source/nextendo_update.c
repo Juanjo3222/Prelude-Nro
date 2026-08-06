@@ -14,11 +14,10 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // ============================================================
-//  Nextendo .nro -- auto-update check via HTTP (lightweight, no SSL),
-//  actual download via HTTPS (GitHub Releases).
-//  The startup check uses plain HTTP to avoid sslInitialize/sslExit
-//  side effects on the system SSL service — which can cause
-//  "Función no disponible" on login after exiting Prelude.
+//  Nextendo .nro -- auto-update via GitHub Releases API.
+//  Checks https://api.github.com/repos/Juanjo3222/Prelude-Nro/releases/latest
+//  for the latest version tag, compares with NEXTENDO_BUILD, and downloads
+//  the .nro asset if a newer version is available.
 // ============================================================
 #include <switch.h>
 #include <string.h>
@@ -29,71 +28,90 @@
 #include "nextendo_update.h"
 #include "nextendo_net.h"
 
-// Lightweight HTTP endpoint for startup version check (no SSL needed).
-// Run your own or use any plain-HTTP endpoint that returns {"version":N,"size":M}.
-#define VPS_IP       "51.178.29.194"
-#define VPS_PORT     8095
-#define VPS_LATEST   "/api/nro/latest"
-
-// GitHub download: URL constructed from build number.
-#define GH_RELEASE   "https://github.com/Juanjo3222/Prelude-Nro/releases/download/v2.0.%d/nextendo.nro"
+// GitHub API for latest release
+#define GH_API_HOST  "api.github.com"
+#define GH_API_PATH  "/repos/Juanjo3222/Prelude-Nro/releases/latest"
+#define GH_API_PORT  443
 
 #define NRO_PATH     "sdmc:/switch/nextendo.nro"
 #define NRO_TMP      "sdmc:/switch/nextendo.nro.new"
 
-// Stored by nextendo_update_check, consumed by nextendo_update_apply.
-// Static because the apply function signature doesn't include the URL.
 static char g_download_url[512] = {0};
+static long g_download_size = 0;
 
-// Parse a JSON long value: ,"key":NNN
-static long json_long(const unsigned char *b, size_t len, const char *key) {
-    size_t kl = strlen(key);
-    for (size_t i = 0; i + kl < len; i++) {
-        if (memcmp(b + i, key, kl) == 0) {
-            size_t j = i + kl;
-            while (j < len && (b[j] == ' ' || b[j] == ':' || b[j] == '"')) j++;
-            long v = 0;
-            if (j < len && b[j] == '-') { j++; }
-            while (j < len && b[j] >= '0' && b[j] <= '9') {
-                v = v * 10 + (b[j] - '0'); j++;
-            }
-            return v;
+// Parse integer from JSON field like: "tag_name":"v3.0.3" -> extract build number
+// Also handle "browser_download_url" and "size" fields
+static bool parse_github_json(const unsigned char *b, size_t len, long *build, char *url, size_t urlcap, long *size) {
+    // Extract tag_name: "tag_name":"vX.Y.Z" -> parse the version
+    const char *tag_key = "\"tag_name\":\"";
+    char *tp = strstr((const char*)b, tag_key);
+    if (!tp) return false;
+    tp += strlen(tag_key);
+    // Parse vX.Y.Z — extract numbers after each dot
+    int maj = 0, min = 0, patch = 0;
+    if (*tp == 'v' || *tp == 'V') tp++;
+    maj = (int)strtol(tp, &tp, 10);
+    if (*tp == '.') tp++;
+    min = (int)strtol(tp, &tp, 10);
+    if (*tp == '.') tp++;
+    patch = (int)strtol(tp, NULL, 10);
+    // Use patch as build (or min*100+patch)
+    *build = patch > 0 ? (long)patch : (long)(min * 100);
+
+    // Extract browser_download_url
+    const char *url_key = "\"browser_download_url\":\"";
+    char *up = strstr((const char*)b, url_key);
+    if (up) {
+        up += strlen(url_key);
+        char *ue = strchr(up, '"');
+        if (ue) {
+            size_t ul = (size_t)(ue - up);
+            if (ul < urlcap) { memcpy(url, up, ul); url[ul] = '\0'; }
         }
     }
-    return -1;
+
+    // Extract size
+    const char *size_key = "\"size\":";
+    char *sp = strstr((const char*)b, size_key);
+    if (sp) {
+        sp += strlen(size_key);
+        *size = strtol(sp, NULL, 10);
+    }
+
+    return *build > 0;
 }
 
-// Check for update. Plain HTTP (no SSL) to a lightweight endpoint.
-// If the endpoint is unreachable, no update is reported — graceful
-// degradation. The VPS URL can be changed at build time.
-// The actual download (nextendo_update_apply) uses HTTPS + sslInit.
 NextendoUpdate nextendo_update_check(void) {
     NextendoUpdate u = { false, 0, 0 };
     socketInitializeDefault();
+    Result rc = sslInitialize(4);
+    if (R_FAILED(rc)) { socketExit(); return u; }
 
     size_t len = 0;
     int status = 0;
-    unsigned char *body = net_http_get(VPS_IP, VPS_PORT, VPS_LATEST, &len, &status);
+    unsigned char *body = net_https_get(GH_API_HOST, GH_API_PATH, &len, &status);
+    sslExit();
+    socketExit();
 
     if (body && status == 200) {
-        long ver = json_long(body, len, "\"version\"");
-        long sz  = json_long(body, len, "\"size\"");
-        if (ver > NEXTENDO_BUILD && sz > 0) {
-            u.available = true;
-            u.latest = (int)ver;
-            u.size = sz;
-                    snprintf(g_download_url, sizeof(g_download_url), GH_RELEASE, (int)ver);
+        long build = 0; long sz = 0;
+        if (parse_github_json(body, len, &build, g_download_url, sizeof(g_download_url), &sz)) {
+            if (build > NEXTENDO_BUILD && sz > 4096) {
+                u.available = true;
+                u.latest = (int)build;
+                u.size = sz;
+                g_download_size = sz;
+            }
         }
         free(body);
     }
-
-    socketExit();
     return u;
 }
 
 // Download and apply the update. Requires sslInitialize() before.
 nextendo_update_result nextendo_update_apply(long expectedSize) {
     if (g_download_url[0] == '\0') return NUP_NET_FAIL;
+    long expected = expectedSize > 0 ? expectedSize : g_download_size;
 
     FILE *f = fopen(NRO_TMP, "wb");
     if (!f) {
@@ -121,7 +139,7 @@ nextendo_update_result nextendo_update_apply(long expectedSize) {
     if (len == -2) { remove(NRO_TMP); return NUP_WRITE_FAIL; }
     if (len < 0)   { remove(NRO_TMP); return NUP_NET_FAIL; }
     if (status != 200 || len < 4096) { remove(NRO_TMP); return NUP_NET_FAIL; }
-    if (expectedSize > 0 && len != expectedSize) { remove(NRO_TMP); return NUP_SIZE_FAIL; }
+    if (expected > 0 && len != expected) { remove(NRO_TMP); return NUP_SIZE_FAIL; }
     fsdevCommitDevice("sdmc");
 
     // Replace the old .nro (current runs from RAM, safe to overwrite).

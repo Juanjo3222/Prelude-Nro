@@ -35,6 +35,7 @@
 #define IMG_BYTES (IMG * IMG * 4)
 
 static Framebuffer s_fb;
+Framebuffer *ui_get_fb(void) { return &s_fb; }
 static FT_Library  s_ft;
 static FT_Face     s_bold, s_semi, s_reg;     // Poppins Bold / SemiBold / Regular
 static u8         *s_bBuf, *s_sBuf, *s_rBuf;  // buffers TTF (gardés en vie)

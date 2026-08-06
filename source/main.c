@@ -30,6 +30,8 @@
 #include "audio.h"
 #include "nextendo_apply.h"
 #include "nextendo_config.h"
+#include <turbojpeg.h>
+#include <stdlib.h>
 #include "nextendo_bcat.h"
 #include "nextendo_update.h"
 #include "ui_theme.h"
@@ -40,6 +42,53 @@ enum {
     SCREEN_UPD_CONFIRM, SCREEN_UPD_PROGRESS, SCREEN_UPD_RESULT,
     SCREEN_LANG
 };
+
+// --- Easter egg: 10% chance video on startup ---
+static void easteregg_video(void) {
+    Framebuffer *fb = ui_get_fb();
+    if (!fb) return;
+    tjhandle tj = tjInitDecompress();
+    if (!tj) return;
+
+    audio_egg_play();
+
+    int w = 320, h = 180;
+    int fbW = 1280, fbH = 720;
+    PadState pad; padInitializeDefault(&pad);
+
+    for (int loops = 0; loops < 2; loops++) {
+        for (int frame = 1; frame <= 9999; frame++) {
+            padUpdate(&pad);
+            if (padGetButtons(&pad) & (HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus))
+                goto ee_done;
+            char path[64];
+            snprintf(path, sizeof(path), "romfs:/easteregg/frame_%04d.jpg", frame);
+            FILE *f = fopen(path, "rb");
+            if (!f) break;
+            fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+            unsigned char *jbuf = malloc(sz);
+            if (!jbuf) { fclose(f); break; }
+            fread(jbuf, 1, sz, f); fclose(f);
+
+            u32 *buf = (u32*)framebufferBegin(fb, NULL);
+            if (!buf) { free(jbuf); break; }
+            unsigned char *rgb = malloc(w * h * 3);
+            if (rgb && tjDecompress2(tj, jbuf, sz, rgb, w, 0, h, TJPF_RGB, TJFLAG_FASTDCT) == 0) {
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++) {
+                        int si = (y * w + x) * 3;
+                        buf[y * fbW + x] = 0xFF000000 | (rgb[si] << 16) | (rgb[si+1] << 8) | rgb[si+2];
+                    }
+            }
+            free(rgb); free(jbuf);
+            framebufferEnd(fb);
+            svcSleepThread(100000000ULL / 10);
+        }
+    }
+ee_done:
+    audio_egg_stop();
+    tjDestroy(tj);
+}
 
 int main(int argc, char **argv) {
     romfsInit();
@@ -61,6 +110,8 @@ int main(int argc, char **argv) {
     // build 10 n'a jamais ete explique, donc si un joueur le revit, ce fichier est notre seul temoin.
     remove(NEXTENDO_TRACE_PATH);
     nextendo_trace("10 main: ui_init ok");
+
+    if ((rand() % 10) == 0) easteregg_video();
 
     // Une console sans emuMMC fait tourner le CFW sur la memoire interne, donc avec son vrai
     // identifiant : blank_prodinfo_emummc, la protection posee par le mode NINTENDO, n'a alors

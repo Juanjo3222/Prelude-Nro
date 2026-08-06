@@ -53,6 +53,8 @@ void ui_draw_toast(const char *text);
 // Ecran de chargement (titre "Prelude" + texte centree).
 void ui_draw_loading(const char *text);
 
+Framebuffer *ui_get_fb(void);
+
 // Ecran de confirmation avant mise a jour (A = installer, B = annuler).
 void ui_draw_upd_confirm(int buildVer);
 

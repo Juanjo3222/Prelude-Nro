@@ -24,5 +24,7 @@
 
 bool audio_init(void);   // demarre la BGM en boucle (true si lancee)
 void audio_exit(void);   // arrete + libere
+void audio_egg_play(void);  // joue l'audio de l'easter egg (pause BGM)
+void audio_egg_stop(void);  // arrete l'audio egg, reprend BGM
 
 #endif // AUDIO_H
