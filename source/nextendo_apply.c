@@ -19,7 +19,7 @@
 //   - SD via fopen "sdmc:/..." + fsdevCommitDevice("sdmc") AVANT reboot (sinon perte)
 //   - mkdir ne cree pas les dirs intermediaires -> ensureDir (mkdir -p)
 //   - detection emuMMC : splGetConfig(65007) ; on ecrit les 2 fichiers (robuste)
-//   - reboot : bpcInitialize()/bpcRebootSystem() (PAS appletRequestToReboot depuis hbmenu)
+//   - reboot : spsmInitialize()/spsmShutdown(true) (reboot propre OS)
 //   - ini [atmosphere] enable_dns_mitm = u8!0x1 / add_defaults_to_dns_hosts = u8!0x0
 // ============================================================
 #include <stdio.h>
@@ -411,6 +411,8 @@ static bool removeTreeRomfs(const char *srcDir, const char *dstDir) {
     struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        if (!strcmp(e->d_name, "420000000000000B")) continue; // Ne JAMAIS supprimer sys-patch
+        if (!strcmp(e->d_name, "4200000000000010")) continue; // Ne JAMAIS supprimer ryu_ldn_nx
         char sp[FS_MAX_PATH], dp[FS_MAX_PATH];
         snprintf(sp, sizeof(sp), "%s/%s", srcDir, e->d_name);
         snprintf(dp, sizeof(dp), "%s/%s", dstDir, e->d_name);
@@ -688,10 +690,10 @@ void nextendo_diag_network(void) {
 }
 
 Result nextendo_reboot(void) {
-    Result rc = bpcInitialize();
+    Result rc = spsmInitialize();
     if (R_FAILED(rc)) return rc;
-    rc = bpcRebootSystem();              // ne revient pas si succes
-    bpcExit();
+    rc = spsmShutdown(true);              // ne revient pas si succes
+    spsmExit();
     return rc;
 }
 
