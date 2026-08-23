@@ -29,7 +29,7 @@
 typedef struct { char code[3]; const char *name; } FlagEntry;
 
 extern const FlagEntry g_flags[];
-#define FLAG_COUNT 110
+#define FLAG_COUNT 113
 #define FLAG_ROWS  9   // rows visible at once in the flag menu
 
 // Scan sdmc:/atmosphere/exefs_patches/ for a "Nextendo Country XX" folder.
