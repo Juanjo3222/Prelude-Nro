@@ -437,14 +437,26 @@
 //           en amont. RESERVE : le patch fait dire "CN" a la console, il ne cree pas la
 //           texture du drapeau. Les 110 d'origine viennent de la table interne de MK8D,
 //           les trois nouveaux non — a confirmer sur console.
-#define NEXTENDO_BUILD 59
+// build 60 : v3.3.8. RETRAIT de CN / HK / TW, ajoutes quelques heures plus tot en v3.3.7.
+//           alyeri, qui a releve la table des pays DANS le jeu pour produire les 110 patches
+//           d origine, confirme que MK8D ne possede pas ces drapeaux. Le patch faisait bien
+//           dire "CN" a la console — il ne pouvait pas creer l image que le jeu n a pas.
+//           Erreur de raisonnement a retenir : de "je sais fabriquer le patch pour n importe
+//           quel code" j ai conclu "n importe quel pays peut etre ajoute". Les deux ne se
+//           rejoignent que si le jeu a la texture, ce qui n a jamais ete verifie avant
+//           publication. La bonne source etait alyeri, qui avait la reponse depuis le debut.
+//           La fabrication LOCALE du patch (build 59) est CONSERVEE : elle supprime un
+//           aller-retour reseau reel sur les 110 pays qui, eux, existent.
+//           Reponse a l issue #17 : la demande est legitime mais irrealisable par un patch
+//           ExeFS — il faudrait ajouter des textures au jeu, ce qui est un autre travail.
+#define NEXTENDO_BUILD 60
 
 // Version SEMVER de CE build. Doit rester alignee avec APP_VERSION (Makefile).
 // Le compare a l'updater se fait en semver complet (maj.min.patch), pas avec
 // NEXTENDO_BUILD : les tags GitHub sont des semver (v3.2.5), pas des compteurs.
 #define NEXTENDO_VERSION_MAJOR 3
 #define NEXTENDO_VERSION_MINOR 3
-#define NEXTENDO_VERSION_PATCH 7
+#define NEXTENDO_VERSION_PATCH 8
 
 typedef struct {
     bool available;   // une version semver > NEXTENDO_VERSION_* est dispo

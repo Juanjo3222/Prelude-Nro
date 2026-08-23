@@ -24,12 +24,17 @@
 
 #include "nextendo_flag.h"
 
-// 113 countries, sorted by code. 110 relevees dans la table interne de MK8D 3.0.5 ;
-// CN / HK / TW ajoutees pour l issue #17 (ymzhen). Le patch n encode PAS un index de
-// pays : il ecrit les DEUX LETTRES du code en ASCII (MOVZ W8,#0x4A=J puis #0x50=P pour JP),
-// verifie en regenerant les 110 patches d alyeri a l octet pres. N importe quel code a donc
-// un patch valide — ce qui reste a confirmer sur console, c est que le jeu possede la
-// TEXTURE du drapeau correspondant.
+// 110 countries from MK8D 3.0.5 internal table, sorted by code.
+//
+// CE NOMBRE EST CELUI DU JEU, pas le notre. Le patch n encode pas un index : il ecrit les
+// DEUX LETTRES du code en ASCII, donc flag_build_ips() sait fabriquer N IMPORTE QUEL code
+// a deux lettres. La tentation est alors d en ajouter — CN / HK / TW ont ete ajoutes ici
+// le 2026-08-23 pour l issue #17, puis RETIRES : alyeri, qui a releve la table d origine
+// dans le jeu, confirme que MK8D n a pas ces drapeaux. Le patch fait bien dire "CN" a la
+// console, mais le jeu n a aucune image a afficher en face.
+//
+// Donc : pouvoir fabriquer le patch ne veut pas dire que le pays existe. N ajouter une
+// entree ici QU APRES l avoir vue s afficher en jeu.
 const FlagEntry g_flags[FLAG_COUNT] = {
     {"AE","United Arab Emirates"}, {"AL","Albania"},   {"AO","Angola"},
     {"AR","Argentina"},            {"AT","Austria"},    {"AU","Australia"},
@@ -39,7 +44,6 @@ const FlagEntry g_flags[FLAG_COUNT] = {
     {"BR","Brazil"},               {"BS","Bahamas"},    {"BW","Botswana"},
     {"BY","Belarus"},              {"BZ","Belize"},
     {"CA","Canada"},               {"CH","Switzerland"},{"CL","Chile"},
-    {"CN","China"},
     {"CO","Colombia"},             {"CY","Cyprus"},     {"CZ","Czechia"},
     {"DE","Germany"},              {"DK","Denmark"},    {"DO","Dominican Republic"},
     {"EC","Ecuador"},              {"EE","Estonia"},    {"EG","Egypt"},
@@ -47,7 +51,6 @@ const FlagEntry g_flags[FLAG_COUNT] = {
     {"FI","Finland"},              {"FR","France"},
     {"GB","United Kingdom"},       {"GH","Ghana"},      {"GR","Greece"},
     {"GT","Guatemala"},
-    {"HK","Hong Kong"},
     {"HN","Honduras"},             {"HR","Croatia"},    {"HU","Hungary"},
     {"ID","Indonesia"},            {"IE","Ireland"},    {"IL","Israel"},
     {"IN","India"},                {"IS","Iceland"},    {"IT","Italy"},
@@ -72,8 +75,7 @@ const FlagEntry g_flags[FLAG_COUNT] = {
     {"SI","Slovenia"},             {"SK","Slovakia"},   {"SR","Suriname"},
     {"SV","El Salvador"},          {"SZ","Eswatini"},
     {"TD","Chad"},                 {"TH","Thailand"},   {"TN","Tunisia"},
-    {"TR","Turkiye"},              {"TT","Trinidad and Tobago"},
-    {"TW","Taiwan"},               {"TZ","Tanzania"},
+    {"TR","Turkiye"},              {"TT","Trinidad and Tobago"}, {"TZ","Tanzania"},
     {"UA","Ukraine"},              {"UG","Uganda"},     {"US","United States"},
     {"VE","Venezuela"},            {"VN","Vietnam"},
     {"ZM","Zambia"},               {"ZW","Zimbabwe"},
