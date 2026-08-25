@@ -454,9 +454,19 @@
 // Version SEMVER de CE build. Doit rester alignee avec APP_VERSION (Makefile).
 // Le compare a l'updater se fait en semver complet (maj.min.patch), pas avec
 // NEXTENDO_BUILD : les tags GitHub sont des semver (v3.2.5), pas des compteurs.
+// Valeurs de repli. Le Makefile les derive d'APP_VERSION et les passe en -D, ce qui rend
+// ces trois lignes inertes lors d'une compilation normale. Elles ne servent qu'a un
+// editeur ou a une compilation hors Makefile — et surtout, elles ne peuvent plus diverger
+// en silence de la version reellement publiee.
+#ifndef NEXTENDO_VERSION_MAJOR
 #define NEXTENDO_VERSION_MAJOR 3
+#endif
+#ifndef NEXTENDO_VERSION_MINOR
 #define NEXTENDO_VERSION_MINOR 3
-#define NEXTENDO_VERSION_PATCH 8
+#endif
+#ifndef NEXTENDO_VERSION_PATCH
+#define NEXTENDO_VERSION_PATCH 9
+#endif
 
 typedef struct {
     bool available;   // une version semver > NEXTENDO_VERSION_* est dispo

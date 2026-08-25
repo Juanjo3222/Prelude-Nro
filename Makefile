@@ -32,6 +32,15 @@ ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
 CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections -fstack-protector-strong -D_FORTIFY_SOURCE=2 $(ARCH) $(DEFINES)
 CFLAGS += $(INCLUDE) -D__SWITCH__
+
+# La version se derive de APP_VERSION et rien d'autre. Elle etait auparavant recopiee a la
+# main dans nextendo_update.h, et le 2026-08-24 la v3.3.9 est sortie en s'annoncant 3.3.8 :
+# le verificateur voyait une version plus recente que la sienne et proposait la mise a jour
+# indefiniment, y compris a qui venait de l'installer. Deux endroits a changer, un seul
+# change : c'est le genre d'oubli qui ne se voit qu'une fois publie.
+CFLAGS += -DNEXTENDO_VERSION_MAJOR=$(word 1,$(subst ., ,$(APP_VERSION)))
+CFLAGS += -DNEXTENDO_VERSION_MINOR=$(word 2,$(subst ., ,$(APP_VERSION)))
+CFLAGS += -DNEXTENDO_VERSION_PATCH=$(word 3,$(subst ., ,$(APP_VERSION)))
 CFLAGS += -I$(PORTLIBS)/include/freetype2 -Wno-format-truncation
 
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
