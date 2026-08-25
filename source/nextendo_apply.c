@@ -172,6 +172,31 @@ char *nextendo_hosts_build(const char *ip) {
     // op2 non gérés par le VPS (authorization server, entitlement check) → 404 → erreurs
     // 2219-4001 (ACNH). On garde capi.lp1.op2.nintendo.net (ligne au-dessus) qui suffit.
 
+    // BCAT — la livraison de contenu en tache de fond. Diagnostic de Kazu, 2026-08-24.
+    //
+    // Quand le blanket *.nintendo.net a ete resserre sur *.srv.nintendo.net plus une liste
+    // nommee, *.cdn.nintendo.net est tombe de la liste — et BCAT vit la. Une console
+    // resolvait donc bcat-list-lp1.cdn.nintendo.net vers le VRAI CDN de Nintendo et lui
+    // presentait un DenebEdgeToken frappe par nous, que Nintendo refuse evidemment. La
+    // synchronisation echouait et Splatoon 3 le remontait en erreur dure : 2122-2403,
+    // module 122 = bcat.
+    //
+    // On nomme les trois hotes plutot que de restaurer un joker *.cdn.nintendo.net : c'est
+    // le style du reste du fichier, et c'est exactement le genre d'elargissement qui a
+    // coute les 2219-4001 d'ACNH deux lignes plus haut.
+    //
+    // NOTRE conntest nginx repond deja sur ces noms : il rend 304 Not Modified sur une
+    // requete conditionnelle, ce que le vrai BCAT rend quand le cache de la console est a
+    // jour. La console lit « rien a synchroniser » et se sert de son cache local.
+    //
+    // ⚠️ CELA N'ENVOIE AUCUNE DONNEE. Le 304 dit « ton cache est bon », pas « voici les
+    // donnees ». Un joueur sans paquet de festival dans sa sauvegarde BCAT n'en recevra
+    // toujours pas : cela cesse simplement d'echouer. Servir les vraies donnees est une
+    // autre fonctionnalite.
+    snprintf(line, sizeof(line), "%s bcat-list-lp1.cdn.nintendo.net\n", ip);   EMIT_H(line);
+    snprintf(line, sizeof(line), "%s bcat-data-lp1.cdn.nintendo.net\n", ip);   EMIT_H(line);
+    snprintf(line, sizeof(line), "%s bcat-topics-lp1.cdn.nintendo.net\n", ip); EMIT_H(line);
+
     EMIT_H("\n# --- 2) NAT-check #2 : IP differente de nncs1 (sinon MK8 test-103) ---\n");
     snprintf(line, sizeof(line), "%s  nncs2-*.n.n.srv.nintendo.net\n", nncs2_ip); EMIT_H(line);
 
