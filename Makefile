@@ -25,6 +25,9 @@ APP_AUTHOR  := Nextendo Network
 # La version AFFICHÉE dans hbmenu (NACP), le build interne (auto-MAJ) et le tag GitHub
 # doivent TOUJOURS être alignés. Build 20 -> 2.0.1 -> release v2.0.1.
 APP_VERSION := 3.3.9
+# L'icone d'un NRO doit etre un JPEG 256x256 : hbmenu la decode avec libjpeg-turbo
+# (assetsLoadJpgFromMemory) et libnx livre lui-meme un default_icon.jpg. Un PNG se
+# compile sans broncher puis donne une tuile vide dans le menu homebrew.
 APP_ICON    := icon.jpg
 
 #---------------------------------------------------------------------------------
