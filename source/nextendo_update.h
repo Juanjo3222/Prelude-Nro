@@ -466,7 +466,22 @@
 //           declenchee par un appui, d'ou « il faut bouger le stick pour qu'il se
 //           rafraichisse »), et barre de boutons corrigee quand le verrou de MAJ est actif
 //           — elle annoncait « A : Ouvrir » alors que seul Y repond.
-#define NEXTENDO_BUILD 61
+// build 62 : v3.4.0. SSBU Online Deluxe passe a la v1.4.1 (publiee le 2026-09-04).
+//           Le mod est EMBARQUE dans le romfs du .nro, pas telecharge : sans republication
+//           les joueurs restaient sur la version d'aout indefiniment, sans rien pour le leur
+//           signaler.
+//
+//           Deux fichiers seulement changent, verifie par empreinte contre l'archive amont :
+//           libssbu_online_deluxe.nro et libssbusync.nro. Les cinq autres que livre l'archive
+//           (exefs.nsp, subsdk9, main.npdm, boot2.flag, libnx_over.nro) sont OCTET POUR OCTET
+//           identiques a ceux deja embarques, donc on n'y touche pas.
+//
+//           ⚠️ Et on ne remplace PAS le dossier entier. Prelude embarque douze fichiers,
+//           l'archive n'en livre que sept : libarcropolis, libnro_hook, libsmashline_plugin,
+//           libimgui_smash et libssbu_pia_manager viennent d'ailleurs (Skyline / ARCropolis).
+//           Deballer l'archive par-dessus les effacerait et le mod ne chargerait plus.
+
+#define NEXTENDO_BUILD 62
 
 // Version SEMVER de CE build. Doit rester alignee avec APP_VERSION (Makefile).
 // Le compare a l'updater se fait en semver complet (maj.min.patch), pas avec
